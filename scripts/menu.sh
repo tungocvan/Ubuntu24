@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Re-execute under sudo for interactive administration; preserve script arguments.
+if (( EUID != 0 )); then
+  exec sudo -- bash "$(realpath -- "${BASH_SOURCE[0]}")" "$@"
+fi
+
 log() { printf '[%s] %s\n' "$1" "$2"; }
 die() { log ERROR "$1" >&2; exit 1; }
 trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
