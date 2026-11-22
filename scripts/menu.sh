@@ -8,7 +8,7 @@ trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
 usage() {
   cat <<'HELP'
 Usage: sudo bash scripts/menu.sh [--help]
-Manage Ubuntu users/groups and inspect native databases.
+Manage Ubuntu users/groups, native databases and WireGuard VPN.
 HELP
 }
 check_environment() {
@@ -173,6 +173,24 @@ manage_database() {
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
   bash "$script_dir/database/menu.sh"
 }
+manage_vpn() {
+  local script_dir
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  local choice endpoint client
+  while true; do
+    printf '\n=== Manage WireGuard VPN ===\n1) Status\n2) Setup Server\n3) Add Client\n0) Back\nChoose [0-3]: '
+    IFS= read -r choice || return
+    case "$choice" in
+      1) bash "$script_dir/vpn/wireguard.sh" status; pause ;;
+      2) printf 'Server public IPv4 or DNS: '; IFS= read -r endpoint || return
+         bash "$script_dir/vpn/wireguard.sh" setup "$endpoint" || true; pause ;;
+      3) printf 'New client name: '; IFS= read -r client || return
+         bash "$script_dir/vpn/wireguard.sh" add-client "$client" || true; pause ;;
+      0) return ;;
+      *) log WARNING 'Invalid selection' ;;
+    esac
+  done
+}
 main() {
   if (($#)); then
     if (($# == 1)) && [[ "$1" == --help || "$1" == -h ]]; then usage; return; fi
@@ -181,11 +199,12 @@ main() {
   check_environment
   local choice
   while true; do
-    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n0) Exit\nChoose [0-2]: '
+    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n3) Manage WireGuard VPN\n0) Exit\nChoose [0-3]: '
     IFS= read -r choice || { printf '\n'; break; }
     case "$choice" in
       1) manage_ubuntu ;;
       2) manage_database ;;
+      3) manage_vpn ;;
       0) break ;;
       *) log WARNING 'Invalid selection' ;;
     esac
