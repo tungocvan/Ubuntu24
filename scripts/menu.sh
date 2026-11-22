@@ -178,7 +178,7 @@ manage_vpn() {
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
   local choice endpoint client
   while true; do
-    printf '\n=== Manage WireGuard VPN ===\n1) Status\n2) Setup Server\n3) Add Client\n0) Back\nChoose [0-3]: '
+    printf '\n=== Manage WireGuard VPN ===\n1) Status\n2) Setup Server\n3) Add Client\n4) Enable VPN-only MariaDB Proxy\n5) Disable VPN-only MariaDB Proxy\n0) Back\nChoose [0-5]: '
     IFS= read -r choice || return
     case "$choice" in
       1) bash "$script_dir/vpn/wireguard.sh" status; pause ;;
@@ -186,6 +186,8 @@ manage_vpn() {
          bash "$script_dir/vpn/wireguard.sh" setup "$endpoint" || true; pause ;;
       3) printf 'New client name: '; IFS= read -r client || return
          bash "$script_dir/vpn/wireguard.sh" add-client "$client" || true; pause ;;
+      4) bash "$script_dir/vpn/mariadb-proxy.sh" enable || true; pause ;;
+      5) bash "$script_dir/vpn/mariadb-proxy.sh" disable || true; pause ;;
       0) return ;;
       *) log WARNING 'Invalid selection' ;;
     esac
