@@ -136,6 +136,56 @@ db_create_user() {
   fi
   unset sql_password
 }
+db_grant_privileges() {
+  local name host database level privileges answer exists status
+  printf 'Database username: '
+  IFS= read -r name || return 0
+  printf 'Account host [localhost]: '
+  IFS= read -r host || return 0
+  host="${host:-localhost}"
+  printf 'Target database: '
+  IFS= read -r database || return 0
+  if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ || ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 || ! "$database" =~ ^[A-Za-z0-9_]+$ ]]; then
+    printf '[ERROR] Invalid account or database name.\n'
+    return 1
+  fi
+  case "$database" in
+    mysql|information_schema|performance_schema|sys|admin_tools)
+      printf '[ERROR] System and administration databases are protected.\n'
+      return 1 ;;
+  esac
+  if db_account_exists "$name" "$host"; then
+    :
+  else
+    printf '[ERROR] Database user does not exist or cannot be verified.\n'
+    return 1
+  fi
+  exists=$(db_query "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='$database';") || return 1
+  if [[ "$(printf '%s\n' "$exists" | tail -n 1)" != 1 ]]; then
+    printf '[ERROR] Database not found or not visible to this account.\n'
+    return 1
+  fi
+  printf '1) READ ONLY (SELECT)\n2) READ/WRITE (SELECT, INSERT, UPDATE, DELETE)\n3) DEVELOPER (READ/WRITE + CREATE, ALTER, DROP, INDEX, REFERENCES)\n4) FULL DATABASE (ALL PRIVILEGES on selected database)\nChoose [1-4]: '
+  IFS= read -r level || return 0
+  case "$level" in
+    1) privileges='SELECT' ;;
+    2) privileges='SELECT, INSERT, UPDATE, DELETE' ;;
+    3) privileges='SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES' ;;
+    4) privileges='ALL PRIVILEGES' ;;
+    *) printf '[WARNING] Invalid privilege level.\n'; return 1 ;;
+  esac
+  printf '[WARNING] Granting %s on %s.* to %s@%s.\n' "$privileges" "$database" "$name" "$host"
+  printf '[INFO] This adds privileges; it does not revoke any existing privileges.\n'
+  printf 'Type YES to grant: '
+  IFS= read -r answer || return 0
+  [[ "$answer" == YES ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  if printf "GRANT %s ON \`%s\`.* TO '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
+    printf '[SUCCESS] Granted %s on %s.* to %s@%s.\n' "$privileges" "$database" "$name" "$host"
+  else
+    printf '[ERROR] GRANT failed. The connected account may lack GRANT OPTION for this database.\n'
+    return 1
+  fi
+}
 DB_CONNECTED=0
 DB_ENGINE=''
 DB_VERSION=''
@@ -187,7 +237,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n0) Back\nChoose [0-11]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n0) Back\nChoose [0-12]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -201,6 +251,7 @@ main() {
       9) db_action db_list_users || true; db_pause ;;
       10) db_action db_delete_user || true; db_pause ;;
       11) db_action db_show_grants || true; db_pause ;;
+      12) db_action db_grant_privileges || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
