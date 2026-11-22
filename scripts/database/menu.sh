@@ -32,18 +32,18 @@ db_show_grants() {
   db_query 'SHOW GRANTS FOR CURRENT_USER();'
 }
 db_list_users() {
-  printf '[INFO] Listing database accounts requires permission to read mysql.user.\n'
-  if ! db_query 'SELECT User AS username, Host AS allowed_host FROM mysql.user ORDER BY User,Host;'; then
-    printf '[ERROR] Insufficient permission to list database accounts.\n'
-    printf '[INFO] Ask a database administrator to check privileges; do not grant global rights automatically.\n'
+  printf '[INFO] Listing accounts through admin_tools.database_users.\n'
+  if ! db_query 'SELECT username, allowed_host FROM admin_tools.database_users ORDER BY username,allowed_host;'; then
+    printf '[ERROR] Cannot read admin_tools.database_users.\n'
+    printf '[INFO] Ask an administrator to create the restricted view and grant SELECT on it.\n'
     return 1
   fi
 }
 db_account_exists() {
   local name="$1" host="$2" result
-  # This check requires read access to mysql.user; fail closed when unavailable.
-  result=$(db_query "SELECT COUNT(*) FROM mysql.user WHERE User='$name' AND Host='$host';") || {
-    printf '[ERROR] Cannot verify database account existence (mysql.user access required).\n' >&2
+  # Use the restricted account directory view; fail closed when unavailable.
+  result=$(db_query "SELECT COUNT(*) FROM admin_tools.database_users WHERE username='$name' AND allowed_host='$host';") || {
+    printf '[ERROR] Cannot verify account existence (admin_tools.database_users access required).\n' >&2
     return 2
   }
   [[ "$(printf '%s\n' "$result" | tail -n 1)" == 1 ]]
@@ -59,7 +59,7 @@ db_delete_user() {
     printf '[ERROR] Invalid username or host.\n'
     return 1
   fi
-  if [[ "$name" == root || "$name" == mysql || "$name" == mariadb.sys || "$name" == mariadb.sys || "$name" == debian-sys-maint ]]; then
+  if [[ "$name" == root || "$name" == mysql || "$name" == mariadb.sys || "$name" == debian-sys-maint || "$name" == tungocvan ]]; then
     printf '[ERROR] Protected administrative/system account.\n'
     return 1
   fi
