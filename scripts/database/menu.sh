@@ -499,7 +499,7 @@ db_create_super_admin() {
   printf '[INFO] Requires a database connection with CREATE USER and global GRANT OPTION.\n'
   current=$(db_query 'SELECT CURRENT_USER();' | tail -n 1) || return 1
   grants=$(db_query 'SHOW GRANTS FOR CURRENT_USER();') || return 1
-  if ! printf '%s\n' "$grants" | grep -Eq 'ALL PRIVILEGES ON (\\*\\.\\*|\`\\*\`\.\`\\*\`)' || ! printf '%s\n' "$grants" | grep -q 'WITH GRANT OPTION'; then
+  if ! printf '%s\\n' "$grants" | grep -Fq 'ALL PRIVILEGES ON *.*' || ! printf '%s\\n' "$grants" | grep -Fq 'WITH GRANT OPTION'; then
     printf '[ERROR] Connected account %s does not show global ALL PRIVILEGES WITH GRANT OPTION.\n' "$current"
     printf '[INFO] Connect using an authorized DBA account. This menu uses TCP credentials from db.inc, not sudo mariadb socket login.\n'
     return 1
@@ -536,9 +536,9 @@ db_create_super_admin() {
   IFS= read -r -s password || return 0; printf '\n'
   printf 'Confirm password (hidden): '
   IFS= read -r -s confirm || return 0; printf '\n'
-  if [[ ${#password} -lt 16 || "$password" != "$confirm" || "$password" == *
+  if [[ ${#password} -lt 16 || "$password" != "$confirm" ]]; then
     unset password confirm
-    printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
+    printf '[ERROR] Password must be at least 16 characters and match confirmation.\\n'; return 1
   fi
   unset confirm
   printf '[WARNING] CREATE %s@%s with global ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
