@@ -447,7 +447,7 @@ db_enable_remote_user() {
   printf '[INFO] Verify bind-address, UFW allowlist, network route, and TLS separately before testing remote access.\n'
 }
 db_grant_create_drop() {
-  local name host scope prefix answer confirm scope_sql grants status
+  local name host scope prefix answer confirm scope_sql
   printf 'Existing database username: '
   IFS= read -r name || return 0
   printf 'Account host [localhost]: '
@@ -466,7 +466,7 @@ db_grant_create_drop() {
       fi
       # Escaped underscore is literal; percent is the trailing wildcard.
       # This pattern allows CREATE/DROP only for database names beginning prefix_.
-      scope_sql="`${prefix}\\_%`.*"
+      scope_sql="\`${prefix}\\_%\`.*"
       printf '[INFO] Scope: databases whose names start with %s_\n' "$prefix"
       printf '[WARNING] MySQL 8 deprecates wildcard matching in database grant names; verify behavior on your server version.\n'
       ;;
