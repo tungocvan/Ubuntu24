@@ -31,21 +31,36 @@ db_show_grants() {
   printf '[INFO] Grants for current database account:\n'
   db_query 'SHOW GRANTS FOR CURRENT_USER();'
 }
-db_list_users() {
-  printf '[INFO] Listing accounts through admin_tools.database_users.\n'
-  if ! db_query 'SELECT username, allowed_host FROM admin_tools.database_users ORDER BY username,allowed_host;'; then
-    printf '[ERROR] Cannot read admin_tools.database_users.\n'
-    printf '[INFO] Ask an administrator to create the restricted view and grant SELECT on it.\n'
+db_account_directory_source() {
+  # Prefer native system tables when authorized; otherwise use restricted views.
+  # Suppress probe errors to avoid misleading ERROR 1049 messages.
+  if db_query 'SELECT User, Host FROM mysql.user LIMIT 0;' >/dev/null 2>&1; then
+    printf 'mysql.user'
+  elif db_query 'SELECT username, allowed_host FROM admin_tools.database_users LIMIT 0;' >/dev/null 2>&1; then
+    printf 'admin_tools.database_users'
+  else
+    printf '[ERROR] Cannot list accounts: no access to mysql.user or admin_tools.database_users.\n' >&2
     return 1
   fi
 }
+db_list_users() {
+  local source
+  source=$(db_account_directory_source) || return 1
+  printf '[INFO] Listing accounts through %s.\n' "$source"
+  if [[ "$source" == mysql.user ]]; then
+    db_query 'SELECT User AS username, Host AS allowed_host FROM mysql.user ORDER BY User, Host;'
+  else
+    db_query 'SELECT username, allowed_host FROM admin_tools.database_users ORDER BY username, allowed_host;'
+  fi
+}
 db_account_exists() {
-  local name="$1" host="$2" result
-  # Use the restricted account directory view; fail closed when unavailable.
-  result=$(db_query "SELECT COUNT(*) FROM admin_tools.database_users WHERE username='$name' AND allowed_host='$host';") || {
-    printf '[ERROR] Cannot verify account existence (admin_tools.database_users access required).\n' >&2
-    return 2
-  }
+  local name="$1" host="$2" result source
+  source=$(db_account_directory_source) || return 2
+  if [[ "$source" == mysql.user ]]; then
+    result=$(db_query "SELECT COUNT(*) FROM mysql.user WHERE User='$name' AND Host='$host';") || return 2
+  else
+    result=$(db_query "SELECT COUNT(*) FROM admin_tools.database_users WHERE username='$name' AND allowed_host='$host';") || return 2
+  fi
   [[ "$(printf '%s\n' "$result" | tail -n 1)" == 1 ]]
 }
 db_delete_user() {
@@ -199,8 +214,14 @@ db_validate_target_account() {
 }
 db_show_scoped_privileges() {
   local name="$1" host="$2" result
-  if ! result=$(db_query "SELECT database_name, select_priv, insert_priv, update_priv, delete_priv, create_priv, alter_priv, drop_priv, index_priv, references_priv, grant_priv FROM admin_tools.database_privileges WHERE username='$name' AND allowed_host='$host' ORDER BY database_name;"); then
-    printf '[ERROR] Cannot read admin_tools.database_privileges. Ask an administrator to install the restricted view.\n'
+  if db_query 'SELECT User, Host FROM mysql.db LIMIT 0;' >/dev/null 2>&1; then
+    result=$(db_query "SELECT Db AS database_name, Select_priv AS select_priv, Insert_priv AS insert_priv, Update_priv AS update_priv, Delete_priv AS delete_priv, Create_priv AS create_priv, Alter_priv AS alter_priv, Drop_priv AS drop_priv, Index_priv AS index_priv, References_priv AS references_priv, Grant_priv AS grant_priv FROM mysql.db WHERE User='$name' AND Host='$host' ORDER BY Db;") || return 1
+    printf '[INFO] Database-level grants from mysql.db.\n'
+  elif db_query 'SELECT username, allowed_host FROM admin_tools.database_privileges LIMIT 0;' >/dev/null 2>&1; then
+    result=$(db_query "SELECT database_name, select_priv, insert_priv, update_priv, delete_priv, create_priv, alter_priv, drop_priv, index_priv, references_priv, grant_priv FROM admin_tools.database_privileges WHERE username='$name' AND allowed_host='$host' ORDER BY database_name;") || return 1
+    printf '[INFO] Database-level grants from admin_tools.database_privileges.\n'
+  else
+    printf '[ERROR] Cannot inspect database-level privileges: no access to mysql.db or admin_tools.database_privileges.\n'
     return 1
   fi
   printf '%s\n' "$result"
