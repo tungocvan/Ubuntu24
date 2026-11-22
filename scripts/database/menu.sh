@@ -27,30 +27,27 @@ db_sizes() {
   db_query "SELECT s.SCHEMA_NAME AS database_name, COUNT(t.TABLE_NAME) AS table_count, COALESCE(ROUND(SUM(COALESCE(t.DATA_LENGTH,0)+COALESCE(t.INDEX_LENGTH,0))/1024/1024,2),0) AS size_mb FROM information_schema.SCHEMATA AS s LEFT JOIN information_schema.TABLES AS t ON s.SCHEMA_NAME=t.TABLE_SCHEMA GROUP BY s.SCHEMA_NAME ORDER BY size_mb DESC, s.SCHEMA_NAME;"
 }
 db_connections() { db_query 'SHOW PROCESSLIST;'; }
-DB_CONNECTED=0
-DB_ENGINE=''
-DB_VERSION=''
 db_create_user() {
-  local name host password confirm_password answer sql_name sql_host sql_password
+  local name host password password_again answer sql_password
   printf 'New database username: '
   IFS= read -r name || return 0
   if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]]; then
-    printf '[ERROR] Username must contain 1-32 letters, digits, _ or -, starting with a letter or _.\n'
+    printf '[ERROR] Invalid username (1-32 letters/digits/_/-).\n'
     return 1
   fi
-  printf 'Allowed client host [localhost]: '
+  printf 'Allowed host [localhost]: '
   IFS= read -r host || return 0
   host="${host:-localhost}"
-  if [[ ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || "${#host}" -gt 255 ]]; then
-    printf '[ERROR] Invalid host. Wildcard hosts are not supported in this menu.\n'
+  if [[ ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 ]]; then
+    printf '[ERROR] Invalid host; wildcard not supported.\n'
     return 1
   fi
   printf 'New password: '
   IFS= read -r -s password || return 0
   printf '\nConfirm password: '
-  IFS= read -r -s confirm_password || return 0
+  IFS= read -r -s password_again || return 0
   printf '\n'
-  if [[ -z "$password" || "$password" != "$confirm_password" || "$password" == *
+  if [[ -z "$password" || "$password" != "$password_again" || "$password" == *
 DB_VERSION=''
 db_connect() {
   local result version
@@ -118,30 +115,27 @@ main() {
 }
 main "$@"
 \r'* ]]; then
-    printf '[ERROR] Password is empty, mismatched, or contains unsupported characters.\n'
+    printf '[ERROR] Password empty or mismatch.\n'
     return 1
   fi
-  unset confirm_password
-  printf 'Create database account %s@%s with no database privileges? Type YES: ' "$name" "$host"
+  unset password_again
+  printf 'Create %s@%s without database grants? Type YES: ' "$name" "$host"
   IFS= read -r answer || return 0
-  if [[ "$answer" != YES ]]; then
-    printf '[INFO] Cancelled.\n'
-    return 0
-  fi
-  # Escape SQL string literals, using the standard backslash escape mode.
-  sql_name="${name//\\/\\\\}"; sql_name="${sql_name//\'/\\\'}"
-  sql_host="${host//\\/\\\\}"; sql_host="${sql_host//\'/\\\'}"
-  sql_password="${password//\\/\\\\}"; sql_password="${sql_password//\'/\\\'}"
+  [[ "$answer" == YES ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  # Disable backslash escapes, then escape single quotes by doubling them.
+  sql_password="${password//\'/\'\'}"
   unset password
-  # Never pass the password as a CLI argument or print SQL containing it.
-  if printf "SET SESSION sql_mode=REPLACE(@@SESSION.sql_mode,'NO_BACKSLASH_ESCAPES','');\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$sql_name" "$sql_host" "$sql_password" | db_exec_stdin; then
-    printf '[SUCCESS] Created database user: %s@%s (no privileges granted).\n' "$name" "$host"
+  if printf "SET SESSION sql_mode=CONCAT_WS(',',NULLIF(@@SESSION.sql_mode,''),'NO_BACKSLASH_ESCAPES');\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+    printf '[SUCCESS] Created %s@%s (no grants).\n' "$name" "$host"
   else
-    printf '[ERROR] Could not create user. Account may exist, or current DB user lacks CREATE USER privilege.\n'
+    printf '[ERROR] Create user failed: insufficient CREATE USER privilege or account exists.\n'
     return 1
   fi
   unset sql_password
 }
+DB_CONNECTED=0
+DB_ENGINE=''
+DB_VERSION=''
 db_connect() {
   local result version
   if ! result=$(db_run db_test); then
