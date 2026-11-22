@@ -39,7 +39,7 @@ sudo bash scripts/export-os-report.sh --latest
 sudo bash scripts/export-os-report.sh --snapshot 20261122T033707Z_000
 ```
 
-Bản xuất được lưu trong `/var/local/ubuntu24/exports/` với tên duy nhất, không ghi đè. Dùng `--output-dir /duong/dan/tuyet/doi` để đổi thư mục đích. File export thuộc root, quyền 0600. Chỉ chia sẻ sau khi rà soát thông tin nhạy cảm.
+Bản xuất mặc định lưu trong `exports/` ở thư mục dự án, được `.gitignore` loại trừ. File mới có tên duy nhất, không ghi đè. Khi chạy với sudo, file mới trong thư mục exports mặc định thuộc người gọi sudo, quyền 0600. Có thể đổi thư mục bằng `--output-dir /duong/dan/tuyet/doi`. Chỉ chia sẻ sau khi rà soát thông tin nhạy cảm.
 
 ## Chính sách dữ liệu
 
