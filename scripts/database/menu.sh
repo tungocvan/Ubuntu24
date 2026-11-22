@@ -186,6 +186,81 @@ db_grant_privileges() {
     return 1
   fi
 }
+db_validate_target_account() {
+  local name="$1" host="$2"
+  if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ || ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 ]]; then
+    printf '[ERROR] Invalid database username or host.\n'
+    return 1
+  fi
+  if ! db_account_exists "$name" "$host"; then
+    printf '[ERROR] Account not found or cannot verify existence.\n'
+    return 1
+  fi
+}
+db_show_user_grants() {
+  local name host
+  printf 'Database username: '
+  IFS= read -r name || return 0
+  printf 'Account host [localhost]: '
+  IFS= read -r host || return 0
+  host="${host:-localhost}"
+  db_validate_target_account "$name" "$host" || return 1
+  printf '[INFO] Grants for %s@%s:\n' "$name" "$host"
+  db_query "SHOW GRANTS FOR '$name'@'$host';"
+}
+db_revoke_privileges() {
+  local name host database level privileges answer exists current
+  printf 'Database username: '
+  IFS= read -r name || return 0
+  printf 'Account host [localhost]: '
+  IFS= read -r host || return 0
+  host="${host:-localhost}"
+  db_validate_target_account "$name" "$host" || return 1
+  printf 'Target database: '
+  IFS= read -r database || return 0
+  if [[ ! "$database" =~ ^[A-Za-z0-9_]+$ ]]; then
+    printf '[ERROR] Invalid database name.\n'
+    return 1
+  fi
+  case "$database" in
+    mysql|information_schema|performance_schema|sys|admin_tools)
+      printf '[ERROR] System and administration databases are protected.\n'
+      return 1 ;;
+  esac
+  exists=$(db_query "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='$database';") || return 1
+  if [[ "$(printf '%s\n' "$exists" | tail -n 1)" != 1 ]]; then
+    printf '[ERROR] Database not found or not visible to this account.\n'
+    return 1
+  fi
+  current=$(db_query 'SELECT CURRENT_USER();' | tail -n 1) || return 1
+  if [[ "$current" == "$name@$host" ]]; then
+    printf '[ERROR] Refusing to revoke privileges from the currently connected account.\n'
+    return 1
+  fi
+  printf '[INFO] Current grants for %s@%s:\n' "$name" "$host"
+  db_query "SHOW GRANTS FOR '$name'@'$host';" || return 1
+  printf '\n1) Revoke READ ONLY privilege (SELECT)\n2) Revoke READ/WRITE privileges\n3) Revoke DEVELOPER privileges\n4) Revoke ALL privileges on selected database\nChoose [1-4]: '
+  IFS= read -r level || return 0
+  case "$level" in
+    1) privileges='SELECT' ;;
+    2) privileges='SELECT, INSERT, UPDATE, DELETE' ;;
+    3) privileges='SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES' ;;
+    4) privileges='ALL PRIVILEGES' ;;
+    *) printf '[WARNING] Invalid privilege level.\n'; return 1 ;;
+  esac
+  printf '[WARNING] REVOKE %s ON %s.* FROM %s@%s\n' "$privileges" "$database" "$name" "$host"
+  printf '[WARNING] This may interrupt running applications. It does not delete data or the account.\n'
+  printf 'Type REVOKE to confirm: '
+  IFS= read -r answer || return 0
+  [[ "$answer" == REVOKE ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  if printf "REVOKE %s ON `%s`.* FROM '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
+    printf '[SUCCESS] Revocation completed. Verify remaining grants below:\n'
+    db_query "SHOW GRANTS FOR '$name'@'$host';"
+  else
+    printf '[ERROR] REVOKE failed; check GRANT OPTION and existing privileges. No success reported.\n'
+    return 1
+  fi
+}
 DB_CONNECTED=0
 DB_ENGINE=''
 DB_VERSION=''
@@ -237,7 +312,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n0) Back\nChoose [0-12]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Grants\n14) Revoke Database Privileges\n0) Back\nChoose [0-14]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -252,6 +327,8 @@ main() {
       10) db_action db_delete_user || true; db_pause ;;
       11) db_action db_show_grants || true; db_pause ;;
       12) db_action db_grant_privileges || true; db_pause ;;
+      13) db_action db_show_user_grants || true; db_pause ;;
+      14) db_action db_revoke_privileges || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
