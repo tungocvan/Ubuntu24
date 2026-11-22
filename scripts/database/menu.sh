@@ -114,7 +114,7 @@ db_create_user() {
   printf 'Allowed host [localhost]: '
   IFS= read -r host || return 0
   host="${host:-localhost}"
-  if [[ ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 ]]; then
+  if [[ ! "$host" =~ ^[A-Za-z0-9_.:%_-]+$ || ${#host} -gt 255 ]]; then
     printf '[ERROR] Invalid host.\n'
     return 1
   fi
@@ -137,6 +137,10 @@ db_create_user() {
       printf '[ERROR] Cannot check for duplicate accounts; no changes made.\n'
       return 1
     fi
+  fi
+  if [[ "$host" == *%* || "$host" == *_* ]]; then
+    printf '[WARNING] Wildcard host (%s) may allow authentication from many client addresses if MySQL networking and firewall permit it.\n' "$host"
+    printf '[WARNING] Prefer localhost, a specific client IP, or a VPN address for production.\n'
   fi
   printf 'Create %s@%s without database grants? Type YES: ' "$name" "$host"
   IFS= read -r answer || return 0
