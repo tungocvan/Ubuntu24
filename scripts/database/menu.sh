@@ -446,6 +446,52 @@ db_enable_remote_user() {
   printf '[SUCCESS] Remote account created and database permissions granted.\n'
   printf '[INFO] Verify bind-address, UFW allowlist, network route, and TLS separately before testing remote access.\n'
 }
+db_grant_create_drop() {
+  local name host scope prefix answer confirm scope_sql grants status
+  printf 'Existing database username: '
+  IFS= read -r name || return 0
+  printf 'Account host [localhost]: '
+  IFS= read -r host || return 0
+  host="${host:-localhost}"
+  db_validate_target_account "$name" "$host" || return 1
+  printf '1) Prefix only (recommended)\n2) All databases (high risk)\nChoose [1-2]: '
+  IFS= read -r scope || return 0
+  case "$scope" in
+    1)
+      printf 'Database prefix (e.g. tnv): '
+      IFS= read -r prefix || return 0
+      if [[ ! "$prefix" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]]; then
+        printf '[ERROR] Prefix must be 2-30 ASCII letters/digits, starting with a letter.\n'
+        return 1
+      fi
+      # Escaped underscore is literal; percent is the trailing wildcard.
+      # This pattern allows CREATE/DROP only for database names beginning prefix_.
+      scope_sql="`${prefix}\\_%`.*"
+      printf '[INFO] Scope: databases whose names start with %s_\n' "$prefix"
+      printf '[WARNING] MySQL 8 deprecates wildcard matching in database grant names; verify behavior on your server version.\n'
+      ;;
+    2)
+      scope_sql='*.*'
+      printf '[WARNING] GLOBAL CREATE/DROP allows creating and dropping databases across the server, including unrelated application databases.\n'
+      printf 'Type GLOBAL to acknowledge this risk: '
+      IFS= read -r confirm || return 0
+      [[ "$confirm" == GLOBAL ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+      ;;
+    *)
+      printf '[ERROR] Invalid scope.\n'
+      return 1 ;;
+  esac
+  printf '[WARNING] GRANT CREATE, DROP ON %s TO %s@%s\n' "$scope_sql" "$name" "$host"
+  printf 'Type GRANT to apply: '
+  IFS= read -r answer || return 0
+  [[ "$answer" == GRANT ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  if ! printf "GRANT CREATE, DROP ON %s TO '%s'@'%s';\n" "$scope_sql" "$name" "$host" | db_exec_stdin; then
+    printf '[ERROR] GRANT failed. Check privileges, server version, and database wildcard handling.\n'
+    return 1
+  fi
+  printf '[SUCCESS] CREATE/DROP granted for %s@%s on %s.\n' "$name" "$host" "$scope_sql"
+  printf '[INFO] Use SHOW GRANTS FOR the target account to verify effective grants.\n'
+}
 db_disconnect() {
   DB_CONNECTED=0
   DB_ENGINE=''
@@ -472,7 +518,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n0) Back\nChoose [0-16]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n0) Back\nChoose [0-17]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -491,6 +537,7 @@ main() {
       14) db_action db_revoke_privileges || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
       16) db_action db_enable_remote_user || true; db_pause ;;
+      17) db_action db_grant_create_drop || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
