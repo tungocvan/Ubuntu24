@@ -68,3 +68,17 @@ sudo bash scripts/menu.sh
 ```
 
 Menu cho phép liệt kê user/group, đổi mật khẩu (kể cả root), tạo user với home directory, thêm vào supplementary group có sẵn, và tạo group. Các thao tác thay đổi cần xác nhận `YES`. Mật khẩu nhập qua `passwd` tương tác; không lưu vào logs. Không thay đổi cấu hình SSH hoặc tự động cấp sudo. Chỉ chạy trên máy chủ tin cậy và rà soát trước khi tạo tài khoản.
+
+## Manage Database (Ubuntu Native, MariaDB/MySQL)
+
+Menu chính: `2) Manage Database`. Giai đoạn đầu chỉ có thao tác đọc: thử kết nối, thông tin server, danh sách database/table, dung lượng và processlist.
+
+```bash
+cd ~/projects/github/tungocvan/Ubuntu24
+cp -n db.inc.example db.inc
+chmod 600 db.inc
+# Chỉnh sửa db.inc bằng trình soạn thảo local, không gửi mật khẩu lên GitHub.
+sudo bash scripts/menu.sh
+```
+
+Cấu hình `db.inc` gồm `username`, `password`, `hostname`, `port`. File được `.gitignore` loại trừ. Mật khẩu không được truyền qua command line; client nhận cấu hình từ file tạm quyền 0600, xóa khi kết thúc lệnh. Kết nối dùng TCP, không cần tài khoản database có quyền quản trị. Các truy vấn sẽ chỉ trả về dữ liệu mà tài khoản database được cấp quyền xem. Chưa có chức năng backup, restore hoặc tạo/xóa database.
