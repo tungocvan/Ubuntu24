@@ -1,5 +1,7 @@
 # Secrets and environment
 db.inc
+.db.inc.backup.*
+.db.inc.new.*
 .env
 .env.*
 !.env.example
