@@ -537,110 +537,62 @@ db_create_super_admin() {
   printf 'Confirm password (hidden): '
   IFS= read -r -s confirm || return 0; printf '\n'
   if [[ ${#password} -lt 16 || "$password" != "$confirm" || "$password" == *
-  DB_CONNECTED=0
-  DB_ENGINE=''
-  DB_VERSION=''
-  printf '[INFO] Disconnected from database menu session.\n'
-}
-db_action() {
-  if (( DB_CONNECTED != 1 )); then
-    printf '[WARNING] Please select 1) Connect Database first.\n'
-    return 0
+    unset password confirm
+    printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
   fi
-  if ! db_run "$@"; then
-    printf '[ERROR] Database query failed; check connection and permissions.\n'
+  unset confirm
+  printf '[WARNING] CREATE %s@%s with global ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
+  printf 'Re-enter exact account (%s@%s): ' "$name" "$host"
+  IFS= read -r answer || { unset password; return 0; }
+  if [[ "$answer" != "$name@$host" ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
+  printf 'Type CREATE SUPER ADMIN to apply: '
+  IFS= read -r answer || { unset password; return 0; }
+  if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
+  # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
+  sql_password="${password//\'/\'\'}"
+  unset password
+  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+    unset sql_password
+    printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
+  fi
+  unset sql_password
+  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
+    printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
     return 1
   fi
+  printf '[SUCCESS] Created global super admin %s@%s with ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
+  printf '[WARNING] This does not clone root authentication plugins or MariaDB PROXY grants.\n'
+  printf '[INFO] Verify with an authorized DBA account: SHOW GRANTS FOR the new account.\n'
 }
-main() {
-  [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
-  local choice
-  while true; do
-    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
-    if (( DB_CONNECTED )); then
-      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
-    else
-      printf 'Connection: DISCONNECTED\n'
-    fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n18) Create Database Super Admin User\n0) Back\nChoose [0-18]: '
-    IFS= read -r choice || break
-    case "$choice" in
-      1) db_connect || true; db_pause ;;
-      2) db_disconnect; db_pause ;;
-      3) db_action db_info || true; db_pause ;;
-      4) db_action db_list || true; db_pause ;;
-      5) db_action db_tables || true; db_pause ;;
-      6) db_action db_sizes || true; db_pause ;;
-      7) db_action db_connections || true; db_pause ;;
-      8) db_action db_create_user || true; db_pause ;;
-      9) db_action db_list_users || true; db_pause ;;
-      10) db_action db_delete_user || true; db_pause ;;
-      11) db_action db_show_grants || true; db_pause ;;
-      12) db_action db_grant_privileges || true; db_pause ;;
-      13) db_action db_show_user_grants || true; db_pause ;;
-      14) db_action db_revoke_privileges || true; db_pause ;;
-      15) db_configure_connection || true; db_pause ;;
-      16) db_action db_enable_remote_user || true; db_pause ;;
-      17) db_action db_grant_create_drop || true; db_pause ;;\n      18) db_action db_create_super_admin || true; db_pause ;;
-      0) break ;;
-      *) printf '[WARNING] Invalid selection.\n' ;;
-    esac
-  done
-}
-main "$@"
-\n'* || "$password" == *
-  DB_CONNECTED=0
-  DB_ENGINE=''
-  DB_VERSION=''
-  printf '[INFO] Disconnected from database menu session.\n'
-}
-db_action() {
-  if (( DB_CONNECTED != 1 )); then
-    printf '[WARNING] Please select 1) Connect Database first.\n'
-    return 0
+\\n'* || "$password" == *
+    unset password confirm
+    printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
   fi
-  if ! db_run "$@"; then
-    printf '[ERROR] Database query failed; check connection and permissions.\n'
+  unset confirm
+  printf '[WARNING] CREATE %s@%s with global ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
+  printf 'Re-enter exact account (%s@%s): ' "$name" "$host"
+  IFS= read -r answer || { unset password; return 0; }
+  if [[ "$answer" != "$name@$host" ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
+  printf 'Type CREATE SUPER ADMIN to apply: '
+  IFS= read -r answer || { unset password; return 0; }
+  if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
+  # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
+  sql_password="${password//\'/\'\'}"
+  unset password
+  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+    unset sql_password
+    printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
+  fi
+  unset sql_password
+  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
+    printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
     return 1
   fi
+  printf '[SUCCESS] Created global super admin %s@%s with ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
+  printf '[WARNING] This does not clone root authentication plugins or MariaDB PROXY grants.\n'
+  printf '[INFO] Verify with an authorized DBA account: SHOW GRANTS FOR the new account.\n'
 }
-main() {
-  [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
-  local choice
-  while true; do
-    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
-    if (( DB_CONNECTED )); then
-      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
-    else
-      printf 'Connection: DISCONNECTED\n'
-    fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n0) Back\nChoose [0-17]: '
-    IFS= read -r choice || break
-    case "$choice" in
-      1) db_connect || true; db_pause ;;
-      2) db_disconnect; db_pause ;;
-      3) db_action db_info || true; db_pause ;;
-      4) db_action db_list || true; db_pause ;;
-      5) db_action db_tables || true; db_pause ;;
-      6) db_action db_sizes || true; db_pause ;;
-      7) db_action db_connections || true; db_pause ;;
-      8) db_action db_create_user || true; db_pause ;;
-      9) db_action db_list_users || true; db_pause ;;
-      10) db_action db_delete_user || true; db_pause ;;
-      11) db_action db_show_grants || true; db_pause ;;
-      12) db_action db_grant_privileges || true; db_pause ;;
-      13) db_action db_show_user_grants || true; db_pause ;;
-      14) db_action db_revoke_privileges || true; db_pause ;;
-      15) db_configure_connection || true; db_pause ;;
-      16) db_action db_enable_remote_user || true; db_pause ;;
-      17) db_action db_grant_create_drop || true; db_pause ;;
-      0) break ;;
-      *) printf '[WARNING] Invalid selection.\n' ;;
-    esac
-  done
-}
-main "$@"
-\r'* ]]; then
+\\r'* ]]; then
     unset password confirm
     printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
   fi
@@ -694,7 +646,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n0) Back\nChoose [0-17]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n18) Create Database Super Admin User\n0) Back\nChoose [0-18]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -713,7 +665,7 @@ main() {
       14) db_action db_revoke_privileges || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
       16) db_action db_enable_remote_user || true; db_pause ;;
-      17) db_action db_grant_create_drop || true; db_pause ;;
+      17) db_action db_grant_create_drop || true; db_pause ;;\n      18) db_action db_create_super_admin || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
