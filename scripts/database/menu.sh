@@ -32,14 +32,14 @@ db_create_user() {
   printf 'New database username: '
   IFS= read -r name || return 0
   if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]]; then
-    printf '[ERROR] Invalid username (1-32 letters/digits/_/-).\n'
+    printf '[ERROR] Invalid username.\n'
     return 1
   fi
   printf 'Allowed host [localhost]: '
   IFS= read -r host || return 0
   host="${host:-localhost}"
   if [[ ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 ]]; then
-    printf '[ERROR] Invalid host; wildcard not supported.\n'
+    printf '[ERROR] Invalid host.\n'
     return 1
   fi
   printf 'New password: '
@@ -47,7 +47,26 @@ db_create_user() {
   printf '\nConfirm password: '
   IFS= read -r -s password_again || return 0
   printf '\n'
-  if [[ -z "$password" || "$password" != "$password_again" || "$password" == *
+  if [[ -z "$password" || "$password" != "$password_again" ]]; then
+    printf '[ERROR] Password empty or mismatch.\n'
+    return 1
+  fi
+  unset password_again
+  printf 'Create %s@%s without database grants? Type YES: ' "$name" "$host"
+  IFS= read -r answer || return 0
+  [[ "$answer" == YES ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  sql_password="${password//\'/\'\'}"
+  unset password
+  if printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+    printf '[SUCCESS] Created %s@%s (no grants).\n' "$name" "$host"
+  else
+    printf '[ERROR] Create user failed; check CREATE USER privilege or duplicate account.\n'
+    return 1
+  fi
+  unset sql_password
+}
+DB_CONNECTED=0
+DB_ENGINE=''
 DB_VERSION=''
 db_connect() {
   local result version
@@ -108,92 +127,6 @@ main() {
       6) db_action db_sizes || true; db_pause ;;
       7) db_action db_connections || true; db_pause ;;
       8) db_action db_create_user || true; db_pause ;;
-      0) break ;;
-      *) printf '[WARNING] Invalid selection.\n' ;;
-    esac
-  done
-}
-main "$@"
-\r'* ]]; then
-    printf '[ERROR] Password empty or mismatch.\n'
-    return 1
-  fi
-  unset password_again
-  printf 'Create %s@%s without database grants? Type YES: ' "$name" "$host"
-  IFS= read -r answer || return 0
-  [[ "$answer" == YES ]] || { printf '[INFO] Cancelled.\n'; return 0; }
-  # Disable backslash escapes, then escape single quotes by doubling them.
-  sql_password="${password//\'/\'\'}"
-  unset password
-  if printf "SET SESSION sql_mode=CONCAT_WS(',',NULLIF(@@SESSION.sql_mode,''),'NO_BACKSLASH_ESCAPES');\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
-    printf '[SUCCESS] Created %s@%s (no grants).\n' "$name" "$host"
-  else
-    printf '[ERROR] Create user failed: insufficient CREATE USER privilege or account exists.\n'
-    return 1
-  fi
-  unset sql_password
-}
-DB_CONNECTED=0
-DB_ENGINE=''
-DB_VERSION=''
-db_connect() {
-  local result version
-  if ! result=$(db_run db_test); then
-    DB_CONNECTED=0
-    DB_ENGINE=''
-    DB_VERSION=''
-    printf '[ERROR] Connection failed; check db.inc, credentials, service and port.\n'
-    return 1
-  fi
-  version=$(printf '%s\n' "$result" | tail -n 1 | cut -f1)
-  DB_VERSION="$version"
-  if [[ "$version" == *MariaDB* ]]; then
-    DB_ENGINE=MariaDB
-  elif [[ "$version" =~ ^[0-9]+\.[0-9]+ ]]; then
-    DB_ENGINE=MySQL
-  else
-    DB_ENGINE=Unknown
-  fi
-  DB_CONNECTED=1
-  printf '[SUCCESS] Connected: %s %s\n' "$DB_ENGINE" "$DB_VERSION"
-  printf '[INFO] Connection is validated per query; no persistent TCP session.\n'
-}
-db_disconnect() {
-  DB_CONNECTED=0
-  DB_ENGINE=''
-  DB_VERSION=''
-  printf '[INFO] Disconnected from database menu session.\n'
-}
-db_action() {
-  if (( DB_CONNECTED != 1 )); then
-    printf '[WARNING] Please select 1) Connect Database first.\n'
-    return 0
-  fi
-  if ! db_run "$@"; then
-    printf '[ERROR] Database query failed; check connection and permissions.\n'
-    return 1
-  fi
-}
-main() {
-  [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
-  local choice
-  while true; do
-    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
-    if (( DB_CONNECTED )); then
-      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
-    else
-      printf 'Connection: DISCONNECTED\n'
-    fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n0) Back\nChoose [0-7]: '
-    IFS= read -r choice || break
-    case "$choice" in
-      1) db_connect || true; db_pause ;;
-      2) db_disconnect; db_pause ;;
-      3) db_action db_info || true; db_pause ;;
-      4) db_action db_list || true; db_pause ;;
-      5) db_action db_tables || true; db_pause ;;
-      6) db_action db_sizes || true; db_pause ;;
-      7) db_action db_connections || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
