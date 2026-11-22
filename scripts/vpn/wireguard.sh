@@ -86,7 +86,7 @@ add_client() {
   unset server_priv
   ip=''
   for ((n=2; n<=254; n++)); do
-    if ! grep -Eq "AllowedIPs = 10\\.77\\.0\\.$n/32([[:space:]]|$)" "$WG_CONF"; then
+    if ! grep -Eq "AllowedIPs = 10\.77\.0\.$n/32([[:space:]]|$)" "$WG_CONF"; then
       ip="10.77.0.$n"; break
     fi
   done
