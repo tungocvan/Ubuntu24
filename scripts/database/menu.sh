@@ -496,9 +496,9 @@ db_offer_super_admin_connection() {
   local name="$1" password="$2" answer key value hostname='' port='' candidate opts backup='' oldmask escaped
   printf 'Update db.inc to use %s for future menu connections? Type YES: ' "$name"
   IFS= read -r answer || return 0
-  [[ "$answer" == YES ]] || { printf '[INFO] db.inc unchanged.\\n'; return 0; }
+  [[ "$answer" == YES ]] || { printf '[INFO] db.inc unchanged.\n'; return 0; }
   if [[ ! -f "$DB_CONFIG" || -L "$DB_CONFIG" ]]; then
-    printf '[ERROR] Unsafe or missing db.inc; no changes made.\\n'; return 1
+    printf '[ERROR] Unsafe or missing db.inc; no changes made.\n'; return 1
   fi
   while IFS='=' read -r key value || [[ -n "$key" ]]; do
     case "$key" in
@@ -507,7 +507,7 @@ db_offer_super_admin_connection() {
     esac
   done < "$DB_CONFIG"
   if [[ -z "$hostname" || ! "$port" =~ ^[0-9]+$ ]]; then
-    printf '[ERROR] Cannot read existing connection settings.\\n'; return 1
+    printf '[ERROR] Cannot read existing connection settings.\n'; return 1
   fi
   oldmask=$(umask); umask 077
   if ! candidate=$(mktemp "$PROJECT_DIR/.db.inc.new.XXXXXXXX"); then
@@ -519,13 +519,13 @@ db_offer_super_admin_connection() {
   umask "$oldmask"
   escaped="${password//\\/\\\\}"
   escaped="${escaped//\"/\\\"}"
-  printf '[client]\\nuser="%s"\\npassword="%s"\\nhost="%s"\\nport=%s\\nprotocol=tcp\\n' "$name" "$escaped" "$hostname" "$port" > "$opts"
+  printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$name" "$escaped" "$hostname" "$port" > "$opts"
   if ! "$DB_CLIENT" --defaults-extra-file="$opts" --batch --execute='SELECT 1;' >/dev/null 2>&1; then
     rm -f -- "$candidate" "$opts"
-    printf '[ERROR] New account cannot connect via existing TCP host/port. db.inc unchanged.\\n'; return 1
+    printf '[ERROR] New account cannot connect via existing TCP host/port. db.inc unchanged.\n'; return 1
   fi
   rm -f -- "$opts"
-  printf 'username=%s\\npassword=%s\\nhostname=%s\\nport=%s\\n' "$name" "$password" "$hostname" "$port" > "$candidate"
+  printf 'username=%s\npassword=%s\nhostname=%s\nport=%s\n' "$name" "$password" "$hostname" "$port" > "$candidate"
   chmod 600 "$candidate"
   if ! backup=$(mktemp "$PROJECT_DIR/.db.inc.backup.XXXXXXXX"); then
     rm -f -- "$candidate"; return 1
@@ -537,9 +537,8 @@ db_offer_super_admin_connection() {
   if ! mv -- "$candidate" "$DB_CONFIG"; then
     rm -f -- "$candidate"; return 1
   fi
-  DB_CONNECTED=0
-  printf '[SUCCESS] db.inc updated. Previous credentials backed up at %s\\n' "$backup"
-  printf '[INFO] Reconnect with menu option 1 to activate the new account.\\n'
+  printf '[SUCCESS] db.inc updated. Previous credentials backed up at %s\n' "$backup"
+  printf '[INFO] Reconnect with menu option 1 to activate the new account.\n'
 }
 db_create_super_admin() {
   local name host password confirm answer sql_password status current grants
