@@ -90,3 +90,7 @@ Trong Manage Database, chọn 1) Connect Database, sau đó 8) Create Database U
 ## Grant Database Privileges
 
 Trong Manage Database, Connect Database trước rồi chọn 12) Grant Database Privileges. Nhập user, host và database đã tồn tại, chọn một trong bốn mức READ ONLY / READ-WRITE / DEVELOPER / FULL DATABASE, sau đó xác nhận YES. Chức năng chỉ thêm quyền trên database được chọn, không thu hồi quyền cũ, không cấp quyền toàn cục và không cho phép chọn database hệ thống. Cần quyền GRANT OPTION phù hợp trên database đích. Không dùng cho tài khoản ứng dụng quyền FULL DATABASE nếu không cần thiết.
+
+## Inspect and revoke database user privileges
+
+Manage Database: 13) Show Database User Grants runs SHOW GRANTS for a validated existing account; 14) Revoke Database Privileges shows existing grants, requires a database name, offers SELECT / READ-WRITE / DEVELOPER / ALL PRIVILEGES on that database, and requires typing REVOKE. It does not delete user, database, or data. Revocation can interrupt applications and requires suitable GRANT OPTION. REVOKE ALL PRIVILEGES ON db.* does not necessarily revoke GRANT OPTION; inspect SHOW GRANTS and revoke that option separately if applicable. Privileges inherited from global grants or roles are not removed by database-scoped revocation.
