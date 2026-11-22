@@ -86,3 +86,7 @@ Cấu hình `db.inc` gồm `username`, `password`, `hostname`, `port`. File đư
 ## Create Database User
 
 Trong Manage Database, chọn 1) Connect Database, sau đó 8) Create Database User. Nhập username, host (mặc định localhost), mật khẩu hai lần và xác nhận YES. Lệnh CREATE USER chạy qua stdin của MySQL/MariaDB client; không đưa mật khẩu vào argv, log hoặc Git. Tài khoản kết nối từ db.inc cần quyền CREATE USER. User mới không được cấp quyền database tự động; cấp quyền theo nguyên tắc least privilege bằng thao tác quản trị riêng.
+
+## Grant Database Privileges
+
+Trong Manage Database, Connect Database trước rồi chọn 12) Grant Database Privileges. Nhập user, host và database đã tồn tại, chọn một trong bốn mức READ ONLY / READ-WRITE / DEVELOPER / FULL DATABASE, sau đó xác nhận YES. Chức năng chỉ thêm quyền trên database được chọn, không thu hồi quyền cũ, không cấp quyền toàn cục và không cho phép chọn database hệ thống. Cần quyền GRANT OPTION phù hợp trên database đích. Không dùng cho tài khoản ứng dụng quyền FULL DATABASE nếu không cần thiết.
