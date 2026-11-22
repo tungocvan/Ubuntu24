@@ -82,3 +82,7 @@ sudo bash scripts/menu.sh
 ```
 
 Cấu hình `db.inc` gồm `username`, `password`, `hostname`, `port`. File được `.gitignore` loại trừ. Mật khẩu không được truyền qua command line; client nhận cấu hình từ file tạm quyền 0600, xóa khi kết thúc lệnh. Kết nối dùng TCP, không cần tài khoản database có quyền quản trị. Các truy vấn sẽ chỉ trả về dữ liệu mà tài khoản database được cấp quyền xem. Chưa có chức năng backup, restore hoặc tạo/xóa database.
+
+## Create Database User
+
+Trong Manage Database, chọn 1) Connect Database, sau đó 8) Create Database User. Nhập username, host (mặc định localhost), mật khẩu hai lần và xác nhận YES. Lệnh CREATE USER chạy qua stdin của MySQL/MariaDB client; không đưa mật khẩu vào argv, log hoặc Git. Tài khoản kết nối từ db.inc cần quyền CREATE USER. User mới không được cấp quyền database tự động; cấp quyền theo nguyên tắc least privilege bằng thao tác quản trị riêng.
