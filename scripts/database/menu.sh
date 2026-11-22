@@ -278,49 +278,94 @@ DB_ENGINE=''
 DB_VERSION=''
 
 db_show_connected_grants() {
-  printf '[INFO] Effective account and grants:\n'
+  printf '[INFO] Authenticated account and grants:\n'
   db_run db_query 'SELECT USER() AS login_user, CURRENT_USER() AS authenticated_user; SHOW GRANTS FOR CURRENT_USER();' || printf '[WARNING] Unable to show grants.\n'
 }
-db_configure_connection() {
-  local host port user pass verify temp config backup choice oldmask escaped
-  printf 'Hostname [127.0.0.1]: '; IFS= read -r host || return 0
-  host="${host:-127.0.0.1}"
-  printf 'Port [3306]: '; IFS= read -r port || return 0
-  port="${port:-3306}"
-  printf 'Username: '; IFS= read -r user || return 0
-  printf 'Password: '; IFS= read -rs pass || return 0; printf '\n'
-  printf 'Confirm password: '; IFS= read -rs verify || return 0; printf '\n'
-  if [[ -z "$user" || "$pass" != "$verify" || ! "$port" =~ ^[0-9]{1,5}$ ]]; then
-    printf '[ERROR] Invalid credentials or port.\n'; return 1
-  fi
-  unset verify
-  (( 10#$port > 0 && 10#$port <= 65535 )) || return 1
-  [[ "$user" =~ ^[A-Za-z0-9_-]+$ && "$host" =~ ^[A-Za-z0-9_.:-]+$ ]] || return 1
-  [[ "$pass" != *
-  local result version
-  if ! result=$(db_run db_test); then
-    DB_CONNECTED=0
-    DB_ENGINE=''
-    DB_VERSION=''
-    printf '[ERROR] Connection failed; check db.inc, credentials, service and port.\n'
+db_connect() {
+  local result version action
+  while true; do
+    if result=$(db_run db_test); then break; fi
+    DB_CONNECTED=0; DB_ENGINE=''; DB_VERSION=''
+    printf '[ERROR] Connection failed; db.inc was not modified.\n'
     printf '1) Retry\n2) Configure connection\n0) Cancel\nChoose [0-2]: '
-    local action
     IFS= read -r action || return 1
-    case "$action" in 1) db_connect ;; 2) db_configure_connection ;; *) return 1 ;; esac
-  fi
+    case "$action" in
+      1) continue ;;
+      2) db_configure_connection; return $? ;;
+      *) return 1 ;;
+    esac
+  done
   version=$(printf '%s\n' "$result" | tail -n 1 | cut -f1)
   DB_VERSION="$version"
-  if [[ "$version" == *MariaDB* ]]; then
-    DB_ENGINE=MariaDB
-  elif [[ "$version" =~ ^[0-9]+\.[0-9]+ ]]; then
-    DB_ENGINE=MySQL
-  else
-    DB_ENGINE=Unknown
-  fi
+  if [[ "$version" == *MariaDB* ]]; then DB_ENGINE=MariaDB
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+ ]]; then DB_ENGINE=MySQL
+  else DB_ENGINE=Unknown; fi
   DB_CONNECTED=1
   printf '[SUCCESS] Connected: %s %s\n' "$DB_ENGINE" "$DB_VERSION"
   printf '[INFO] Connection is validated per query; no persistent TCP session.\n'
   db_show_connected_grants
+}
+db_configure_connection() {
+  local host port username password confirm answer opts candidate backup oldmask mode owner escaped
+  printf '[INFO] Existing db.inc remains unchanged until test and SAVE.\n'
+  printf 'Hostname [127.0.0.1]: '; IFS= read -r host || return 0
+  host="${host:-127.0.0.1}"
+  printf 'Port [3306]: '; IFS= read -r port || return 0
+  port="${port:-3306}"
+  printf 'Username: '; IFS= read -r username || return 0
+  printf 'Password (hidden): '; IFS= read -r -s password || return 0; printf '\n'
+  printf 'Confirm password (hidden): '; IFS= read -r -s confirm || return 0; printf '\n'
+  if [[ -z "$username" || "$password" != "$confirm" || ! "$port" =~ ^[0-9]{1,5}$ ]]; then
+    printf '[ERROR] Invalid credentials or password mismatch.\n'; return 1
+  fi
+  unset confirm
+  (( 10#$port >= 1 && 10#$port <= 65535 )) || { printf '[ERROR] Invalid port.\n'; return 1; }
+  [[ "$username" =~ ^[A-Za-z0-9_-]+$ && "$host" =~ ^[A-Za-z0-9_.:-]+$ ]] || { printf '[ERROR] Invalid username or host.\n'; return 1; }
+  [[ "$password" != *$'\n'* && "$password" != *$'\r'* ]] || return 1
+  if command -v mariadb >/dev/null 2>&1; then DB_CLIENT=mariadb
+  elif command -v mysql >/dev/null 2>&1; then DB_CLIENT=mysql
+  else printf '[ERROR] mariadb/mysql client not found.\n'; return 1; fi
+  [[ ! -L "$DB_CONFIG" ]] || { printf '[ERROR] Refusing symlink db.inc.\n'; return 1; }
+  if [[ -e "$DB_CONFIG" ]]; then
+    [[ -f "$DB_CONFIG" ]] || return 1
+    mode=$(stat -c %a -- "$DB_CONFIG") || return 1
+    owner=$(stat -c %u -- "$DB_CONFIG") || return 1
+    (( (8#$mode & 8#077) == 0 )) || { printf '[ERROR] db.inc has unsafe permissions.\n'; return 1; }
+    [[ "$owner" == 0 || "$owner" == "${SUDO_UID:-$EUID}" ]] || { printf '[ERROR] Unsafe db.inc owner.\n'; return 1; }
+  fi
+  oldmask=$(umask); umask 077
+  opts=$(mktemp) || { umask "$oldmask"; return 1; }
+  if ! candidate=$(mktemp "$PROJECT_DIR/.db.inc.new.XXXXXXXX"); then
+    umask "$oldmask"; rm -f -- "$opts"; return 1
+  fi
+  umask "$oldmask"
+  escaped="${password//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$username" "$escaped" "$host" "$port" > "$opts"
+  if ! "$DB_CLIENT" --defaults-extra-file="$opts" --batch --execute='SELECT 1;' >/dev/null 2>&1; then
+    rm -f -- "$opts" "$candidate"
+    printf '[ERROR] Connection test failed. db.inc unchanged.\n'
+    return 1
+  fi
+  rm -f -- "$opts"
+  printf '[SUCCESS] Connection test passed.\nType SAVE to update db.inc: '
+  IFS= read -r answer || { rm -f -- "$candidate"; return 0; }
+  if [[ "$answer" != SAVE ]]; then rm -f -- "$candidate"; printf '[INFO] Cancelled.\n'; return 0; fi
+  printf 'username=%s\npassword=%s\nhostname=%s\nport=%s\n' "$username" "$password" "$host" "$port" > "$candidate"
+  unset password escaped
+  chmod 600 "$candidate"
+  if [[ -f "$DB_CONFIG" ]]; then
+    backup=$(mktemp "$PROJECT_DIR/.db.inc.backup.XXXXXXXX") || { rm -f -- "$candidate"; return 1; }
+    if ! cp -p -- "$DB_CONFIG" "$backup"; then rm -f -- "$candidate" "$backup"; return 1; fi
+    chmod 600 "$backup"
+    printf '[INFO] Private credential backup: %s\n' "$backup"
+  fi
+  if ! mv -- "$candidate" "$DB_CONFIG"; then
+    rm -f -- "$candidate"; printf '[ERROR] Unable to save db.inc.\n'; return 1
+  fi
+  DB_CONNECTED=0
+  printf '[SUCCESS] db.inc updated. Reconnecting...\n'
+  db_connect
 }
 db_disconnect() {
   DB_CONNECTED=0
@@ -365,6 +410,7 @@ main() {
       12) db_action db_grant_privileges || true; db_pause ;;
       13) db_action db_show_user_grants || true; db_pause ;;
       14) db_action db_revoke_privileges || true; db_pause ;;
+      15) db_configure_connection || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
