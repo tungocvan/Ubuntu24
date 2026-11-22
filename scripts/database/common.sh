@@ -46,6 +46,8 @@ db_init() {
   printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$username" "$escaped" "$hostname" "$port" > "$DB_TEMP"
 }
 db_query() { "$DB_CLIENT" --defaults-extra-file="$DB_TEMP" --batch --raw --execute="$1"; }
+# SQL is supplied on stdin, never in process arguments; suppress SQL-bearing errors.
+db_exec_stdin() { "$DB_CLIENT" --defaults-extra-file="$DB_TEMP" --batch >/dev/null 2>/dev/null; }
 db_run() (
   DB_TEMP=""
   trap db_cleanup EXIT
