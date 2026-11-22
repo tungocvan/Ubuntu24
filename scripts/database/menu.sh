@@ -197,6 +197,17 @@ db_validate_target_account() {
     return 1
   fi
 }
+db_show_scoped_privileges() {
+  local name="$1" host="$2" result
+  if ! result=$(db_query "SELECT database_name, select_priv, insert_priv, update_priv, delete_priv, create_priv, alter_priv, drop_priv, index_priv, references_priv, grant_priv FROM admin_tools.database_privileges WHERE username='$name' AND allowed_host='$host' ORDER BY database_name;"); then
+    printf '[ERROR] Cannot read admin_tools.database_privileges. Ask an administrator to install the restricted view.\n'
+    return 1
+  fi
+  printf '%s\n' "$result"
+  if [[ "$(printf '%s\n' "$result" | wc -l)" -le 1 ]]; then
+    printf '[INFO] No database-level grants found. Global, table-level and role grants are not shown.\n'
+  fi
+}
 db_show_user_grants() {
   local name host
   printf 'Database username: '
@@ -205,12 +216,9 @@ db_show_user_grants() {
   IFS= read -r host || return 0
   host="${host:-localhost}"
   db_validate_target_account "$name" "$host" || return 1
-  printf '[INFO] Grants for %s@%s:\n' "$name" "$host"
-  if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
-    printf '[ERROR] MariaDB denied SHOW GRANTS for another account.\n'
-    printf '[INFO] Use sudo mariadb and run SHOW GRANTS FOR the target account.\n'
-    return 1
-  fi
+  printf '[INFO] Database-level privileges for %s@%s (Y=yes, N=no):\n' "$name" "$host"
+  db_show_scoped_privileges "$name" "$host"
+  printf '[INFO] This view excludes global, table-level, column-level and role privileges.\n'
 }
 db_revoke_privileges() {
   local name host database level privileges answer exists current
@@ -241,10 +249,8 @@ db_revoke_privileges() {
     printf '[ERROR] Refusing to revoke privileges from the currently connected account.\n'
     return 1
   fi
-  printf '[INFO] Current grants for %s@%s:\n' "$name" "$host"
-  if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
-    printf '[WARNING] Cannot inspect target grants with this account. Check them separately using sudo mariadb.\n'
-  fi
+  printf '[INFO] Current database-level privileges for %s@%s:\n' "$name" "$host"
+  db_show_scoped_privileges "$name" "$host" || return 1
   printf '\n1) Revoke READ ONLY privilege (SELECT)\n2) Revoke READ/WRITE privileges\n3) Revoke DEVELOPER privileges\n4) Revoke ALL privileges on selected database\nChoose [1-4]: '
   IFS= read -r level || return 0
   case "$level" in
@@ -260,11 +266,8 @@ db_revoke_privileges() {
   IFS= read -r answer || return 0
   [[ "$answer" == REVOKE ]] || { printf '[INFO] Cancelled.\n'; return 0; }
   if printf "REVOKE %s ON \`%s\`.* FROM '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
-    printf '[SUCCESS] Revocation completed. Verify remaining grants below:\n'
-    if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
-      printf '[WARNING] Revocation succeeded, but this account cannot display target grants.\n'
-      printf '[INFO] Use sudo mariadb and run SHOW GRANTS FOR the target account.\n'
-    fi
+    printf '[SUCCESS] Revocation completed. Database-level privileges now:\n'
+    db_show_scoped_privileges "$name" "$host" || printf '[WARNING] Could not refresh privilege view.\n'
   else
     printf '[ERROR] REVOKE failed; check GRANT OPTION and existing privileges. No success reported.\n'
     return 1
@@ -321,7 +324,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Grants\n14) Revoke Database Privileges\n0) Back\nChoose [0-14]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n0) Back\nChoose [0-14]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
