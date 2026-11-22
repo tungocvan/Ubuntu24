@@ -659,7 +659,8 @@ main() {
       14) db_action db_revoke_privileges || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
       16) db_action db_enable_remote_user || true; db_pause ;;
-      17) db_action db_grant_create_drop || true; db_pause ;;\n      18) db_action db_create_super_admin || true; db_pause ;;
+      17) db_action db_grant_create_drop || true; db_pause ;;
+      18) db_action db_create_super_admin || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
