@@ -206,7 +206,11 @@ db_show_user_grants() {
   host="${host:-localhost}"
   db_validate_target_account "$name" "$host" || return 1
   printf '[INFO] Grants for %s@%s:\n' "$name" "$host"
-  db_query "SHOW GRANTS FOR '$name'@'$host';"
+  if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
+    printf '[ERROR] MariaDB denied SHOW GRANTS for another account.\n'
+    printf '[INFO] Run as an administrator: sudo mariadb -e "SHOW GRANTS FOR '\''%s'\''@'\''%s'\'';"\n' "$name" "$host"
+    return 1
+  fi
 }
 db_revoke_privileges() {
   local name host database level privileges answer exists current
@@ -255,7 +259,10 @@ db_revoke_privileges() {
   [[ "$answer" == REVOKE ]] || { printf '[INFO] Cancelled.\n'; return 0; }
   if printf "REVOKE %s ON `%s`.* FROM '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
     printf '[SUCCESS] Revocation completed. Verify remaining grants below:\n'
-    db_query "SHOW GRANTS FOR '$name'@'$host';"
+    if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
+      printf '[WARNING] Revocation succeeded, but this account cannot display target grants.\n'
+      printf '[INFO] Verify with sudo mariadb -e "SHOW GRANTS FOR '\''%s'\''@'\''%s'\'';"\n' "$name" "$host"
+    fi
   else
     printf '[ERROR] REVOKE failed; check GRANT OPTION and existing privileges. No success reported.\n'
     return 1
