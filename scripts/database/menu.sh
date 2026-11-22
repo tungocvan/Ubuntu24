@@ -203,7 +203,7 @@ db_grant_privileges() {
 }
 db_validate_target_account() {
   local name="$1" host="$2"
-  if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ || ! "$host" =~ ^[A-Za-z0-9_.:-]+$ || ${#host} -gt 255 ]]; then
+  if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ || ! "$host" =~ ^[A-Za-z0-9_.:%_-]+$ || ${#host} -gt 255 ]]; then
     printf '[ERROR] Invalid database username or host.\n'
     return 1
   fi
