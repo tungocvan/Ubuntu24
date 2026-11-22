@@ -276,6 +276,216 @@ db_revoke_privileges() {
 DB_CONNECTED=0
 DB_ENGINE=''
 DB_VERSION=''
+
+db_show_connected_grants() {
+  printf '[INFO] Effective account and grants:\n'
+  db_run db_query 'SELECT USER() AS login_user, CURRENT_USER() AS authenticated_user; SHOW GRANTS FOR CURRENT_USER();' || printf '[WARNING] Unable to show grants.\n'
+}
+db_configure_connection() {
+  local host port user pass verify temp config backup choice oldmask escaped
+  printf 'Hostname [127.0.0.1]: '; IFS= read -r host || return 0
+  host="${host:-127.0.0.1}"
+  printf 'Port [3306]: '; IFS= read -r port || return 0
+  port="${port:-3306}"
+  printf 'Username: '; IFS= read -r user || return 0
+  printf 'Password: '; IFS= read -rs pass || return 0; printf '\n'
+  printf 'Confirm password: '; IFS= read -rs verify || return 0; printf '\n'
+  if [[ -z "$user" || "$pass" != "$verify" || ! "$port" =~ ^[0-9]{1,5}$ ]]; then
+    printf '[ERROR] Invalid credentials or port.\n'; return 1
+  fi
+  unset verify
+  (( 10#$port > 0 && 10#$port <= 65535 )) || return 1
+  [[ "$user" =~ ^[A-Za-z0-9_-]+$ && "$host" =~ ^[A-Za-z0-9_.:-]+$ ]] || return 1
+  [[ "$pass" != *
+  local result version
+  if ! result=$(db_run db_test); then
+    DB_CONNECTED=0
+    DB_ENGINE=''
+    DB_VERSION=''
+    printf '[ERROR] Connection failed; check db.inc, credentials, service and port.\n'
+    printf '1) Retry\n2) Configure connection\n0) Cancel\nChoose [0-2]: '
+    local action
+    IFS= read -r action || return 1
+    case "$action" in 1) db_connect ;; 2) db_configure_connection ;; *) return 1 ;; esac
+  fi
+  version=$(printf '%s\n' "$result" | tail -n 1 | cut -f1)
+  DB_VERSION="$version"
+  if [[ "$version" == *MariaDB* ]]; then
+    DB_ENGINE=MariaDB
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+ ]]; then
+    DB_ENGINE=MySQL
+  else
+    DB_ENGINE=Unknown
+  fi
+  DB_CONNECTED=1
+  printf '[SUCCESS] Connected: %s %s\n' "$DB_ENGINE" "$DB_VERSION"
+  printf '[INFO] Connection is validated per query; no persistent TCP session.\n'
+  db_show_connected_grants
+}
+db_disconnect() {
+  DB_CONNECTED=0
+  DB_ENGINE=''
+  DB_VERSION=''
+  printf '[INFO] Disconnected from database menu session.\n'
+}
+db_action() {
+  if (( DB_CONNECTED != 1 )); then
+    printf '[WARNING] Please select 1) Connect Database first.\n'
+    return 0
+  fi
+  if ! db_run "$@"; then
+    printf '[ERROR] Database query failed; check connection and permissions.\n'
+    return 1
+  fi
+}
+main() {
+  [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
+  local choice
+  while true; do
+    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
+    if (( DB_CONNECTED )); then
+      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
+    else
+      printf 'Connection: DISCONNECTED\n'
+    fi
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n0) Back\nChoose [0-15]: '
+    IFS= read -r choice || break
+    case "$choice" in
+      1) db_connect || true; db_pause ;;
+      2) db_disconnect; db_pause ;;
+      3) db_action db_info || true; db_pause ;;
+      4) db_action db_list || true; db_pause ;;
+      5) db_action db_tables || true; db_pause ;;
+      6) db_action db_sizes || true; db_pause ;;
+      7) db_action db_connections || true; db_pause ;;
+      8) db_action db_create_user || true; db_pause ;;
+      9) db_action db_list_users || true; db_pause ;;
+      10) db_action db_delete_user || true; db_pause ;;
+      11) db_action db_show_grants || true; db_pause ;;
+      12) db_action db_grant_privileges || true; db_pause ;;
+      13) db_action db_show_user_grants || true; db_pause ;;
+      14) db_action db_revoke_privileges || true; db_pause ;;
+      15) db_configure_connection || true; db_pause ;;
+      0) break ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+main "$@"
+\n'* && "$pass" != *
+  local result version
+  if ! result=$(db_run db_test); then
+    DB_CONNECTED=0
+    DB_ENGINE=''
+    DB_VERSION=''
+    printf '[ERROR] Connection failed; check db.inc, credentials, service and port.\n'
+    return 1
+  fi
+  version=$(printf '%s\n' "$result" | tail -n 1 | cut -f1)
+  DB_VERSION="$version"
+  if [[ "$version" == *MariaDB* ]]; then
+    DB_ENGINE=MariaDB
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+ ]]; then
+    DB_ENGINE=MySQL
+  else
+    DB_ENGINE=Unknown
+  fi
+  DB_CONNECTED=1
+  printf '[SUCCESS] Connected: %s %s\n' "$DB_ENGINE" "$DB_VERSION"
+  printf '[INFO] Connection is validated per query; no persistent TCP session.\n'
+}
+db_disconnect() {
+  DB_CONNECTED=0
+  DB_ENGINE=''
+  DB_VERSION=''
+  printf '[INFO] Disconnected from database menu session.\n'
+}
+db_action() {
+  if (( DB_CONNECTED != 1 )); then
+    printf '[WARNING] Please select 1) Connect Database first.\n'
+    return 0
+  fi
+  if ! db_run "$@"; then
+    printf '[ERROR] Database query failed; check connection and permissions.\n'
+    return 1
+  fi
+}
+main() {
+  [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
+  local choice
+  while true; do
+    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
+    if (( DB_CONNECTED )); then
+      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
+    else
+      printf 'Connection: DISCONNECTED\n'
+    fi
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n0) Back\nChoose [0-14]: '
+    IFS= read -r choice || break
+    case "$choice" in
+      1) db_connect || true; db_pause ;;
+      2) db_disconnect; db_pause ;;
+      3) db_action db_info || true; db_pause ;;
+      4) db_action db_list || true; db_pause ;;
+      5) db_action db_tables || true; db_pause ;;
+      6) db_action db_sizes || true; db_pause ;;
+      7) db_action db_connections || true; db_pause ;;
+      8) db_action db_create_user || true; db_pause ;;
+      9) db_action db_list_users || true; db_pause ;;
+      10) db_action db_delete_user || true; db_pause ;;
+      11) db_action db_show_grants || true; db_pause ;;
+      12) db_action db_grant_privileges || true; db_pause ;;
+      13) db_action db_show_user_grants || true; db_pause ;;
+      14) db_action db_revoke_privileges || true; db_pause ;;
+      0) break ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+main "$@"
+\r'* ]] || return 1
+  if command -v mariadb >/dev/null 2>&1; then DB_CLIENT=mariadb
+  elif command -v mysql >/dev/null 2>&1; then DB_CLIENT=mysql
+  else printf '[ERROR] Database client not installed.\n'; return 1; fi
+  [[ ! -L "$DB_CONFIG" ]] || { printf '[ERROR] Refusing symlink db.inc.\n'; return 1; }
+  if [[ -e "$DB_CONFIG" ]]; then
+    [[ -f "$DB_CONFIG" ]] || return 1
+    local mode owner
+    mode=$(stat -c %a "$DB_CONFIG") || return 1
+    owner=$(stat -c %u "$DB_CONFIG") || return 1
+    (( (8#$mode & 8#077) == 0 )) || { printf '[ERROR] Insecure db.inc permissions.\n'; return 1; }
+    [[ "$owner" == 0 || "$owner" == "${SUDO_UID:-$EUID}" ]] || return 1
+  fi
+  oldmask=$(umask); umask 077
+  temp=$(mktemp) || { umask "$oldmask"; return 1; }
+  config=$(mktemp "$PROJECT_DIR/.db.inc.new.XXXXXXXX") || { umask "$oldmask"; rm -f -- "$temp"; return 1; }
+  umask "$oldmask"
+  escaped="${pass//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$user" "$escaped" "$host" "$port" > "$temp"
+  if ! "$DB_CLIENT" --defaults-extra-file="$temp" --batch --execute='SELECT 1' >/dev/null 2>&1; then
+    printf '[ERROR] Connection test failed. db.inc unchanged.\n'
+    rm -f -- "$temp" "$config"; return 1
+  fi
+  rm -f -- "$temp"
+  printf '[SUCCESS] Connection verified.\nType SAVE to update db.inc: '
+  IFS= read -r choice || { rm -f -- "$config"; return 0; }
+  if [[ "$choice" != SAVE ]]; then rm -f -- "$config"; printf '[INFO] Cancelled.\n'; return 0; fi
+  printf 'username=%s\npassword=%s\nhostname=%s\nport=%s\n' "$user" "$pass" "$host" "$port" > "$config"
+  unset pass escaped
+  chmod 600 "$config"
+  if [[ -f "$DB_CONFIG" ]]; then
+    backup=$(mktemp "$PROJECT_DIR/.db.inc.backup.XXXXXXXX") || { rm -f -- "$config"; return 1; }
+    if ! cp -p -- "$DB_CONFIG" "$backup"; then rm -f -- "$config" "$backup"; return 1; fi
+    chmod 600 "$backup"
+    printf '[INFO] Private backup saved: %s\n' "$backup"
+  fi
+  mv -- "$config" "$DB_CONFIG" || return 1
+  DB_CONNECTED=0
+  printf '[SUCCESS] Saved db.inc. Reconnecting...\n'
+  db_connect
+}
+
 db_connect() {
   local result version
   if ! result=$(db_run db_test); then
