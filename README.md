@@ -98,3 +98,39 @@ Manage Database: 13) Show Database User Grants runs SHOW GRANTS for a validated 
 ## Database connection setup and login privileges
 
 Manage Database option 15 configures hostname, port, username and a hidden password. The new credentials are tested over TCP before saving; type `SAVE` to write `db.inc`. Existing configuration is backed up to a private `.db.inc.backup.*` file (contains credentials) and the new file is mode 600. On connection failure, choose retry, configure, or cancel. On successful connection, the menu displays `USER()`, `CURRENT_USER()` and `SHOW GRANTS FOR CURRENT_USER()`. This is the server's grant output, not an inferred effective privilege summary. Review and securely retire credential backups when no longer needed.
+
+
+## WireGuard VPN for remote MariaDB (option A)
+
+The main menu now includes `3) Manage WireGuard VPN` (status, setup server, add client). The VPN uses split tunneling: client traffic to `10.77.0.1/32` enters WireGuard; ordinary Internet traffic remains on the client's normal connection. This setup does **not** open MariaDB TCP/3306 on the public interface, change MariaDB, configure UFW, enable forwarding, or modify SSH.
+
+Prerequisites: Ubuntu Server with root access; server reachable by a public IPv4/DNS and inbound UDP 51820. If the server is behind a home router, forward **UDP 51820 only** to the server's LAN address. If behind CGNAT without a public endpoint, use a VPS relay or a mesh VPN rather than attempting port forwarding. Take a VM snapshot or backup before changing networking.
+
+```bash
+cd ~/projects/github/tungocvan/Ubuntu24
+bash -n scripts/menu.sh scripts/vpn/wireguard.sh
+sudo bash scripts/menu.sh
+# 3) Manage WireGuard VPN -> 2) Setup Server
+# Enter the server's PUBLIC IPv4 or DNS (not the client's address)
+# 3) Manage WireGuard VPN -> 3) Add Client
+```
+
+Direct commands (interactive confirmation required):
+
+```bash
+sudo bash scripts/vpn/wireguard.sh setup vpn.example.com
+sudo bash scripts/vpn/wireguard.sh add-client laptop
+sudo bash scripts/vpn/wireguard.sh status
+```
+
+Client configuration is generated at `/var/lib/ubuntu24/wireguard/clients/laptop.conf` with permissions 0600. Transfer it through a secure channel to the laptop's WireGuard client; never commit it or paste it into a chat. Keep it outside the Git repository. Only create one profile per device. The server configuration lives at `/etc/wireguard/wg-ubuntu24.conf`; backups are created there when adding clients.
+
+**Firewall:** after confirming the active SSH allow rule, allow WireGuard's UDP port on the server. For UFW, review `sudo ufw status numbered` before adding `sudo ufw allow 51820/udp comment 'WireGuard VPN'`. Do not enable/reset UFW blindly on a remote server. If the cloud provider has a security group, allow UDP 51820 there as well. Do not allow TCP 3306 on the public interface.
+
+**MariaDB access:** WireGuard connectivity alone does not make a database bound to `127.0.0.1:3306` reachable from `10.77.0.1`. First verify `sudo ss -lntp | grep ':3306'` and `sudo wg show wg-ubuntu24`. A controlled next step is a VPN-interface-only TCP proxy bound to `10.77.0.1:3306` forwarding to `127.0.0.1:3306`, or an explicitly reviewed MariaDB listener/firewall change. **Neither is enabled by this version**. Do not switch MariaDB to `0.0.0.0` without separately auditing host firewall, Docker port exposure and network access.
+
+When a VPN-only listener has been configured, connect from the laptop with `mariadb --host=10.77.0.1 --port=3306 --protocol=tcp --user=YOUR_DB_USER -p`. Use a dedicated least-privilege database user. If a local TCP proxy forwards to loopback, MariaDB sees the proxy's local address, not the laptop's WireGuard IP; check `SELECT USER(), CURRENT_USER();` before assigning `user@host` grants. Do not assume the earlier `Enable Remote Access for User` option is required for a local proxy.
+
+**Diagnostics:** `sudo wg show wg-ubuntu24`, `sudo systemctl status wg-quick@wg-ubuntu24`, `sudo journalctl -u wg-quick@wg-ubuntu24 -n 50 --no-pager`, and on the client `ping 10.77.0.1`. WireGuard status can show peers even without a recent successful handshake; inspect `latest handshake` and data counters.
+
+**Rollback:** stop and disable WireGuard only after confirming no other dependent services: `sudo systemctl disable --now wg-quick@wg-ubuntu24`. Configuration and client keys are retained; this does not remove firewall rules or router forwarding. For key compromise, rotate/revoke the affected peer; deleting a local profile alone does not revoke server access.
