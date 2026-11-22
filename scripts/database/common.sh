@@ -39,13 +39,9 @@ db_init() {
   printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$username" "$escaped" "$hostname" "$port" > "$DB_TEMP"
 }
 db_query() { mariadb --defaults-extra-file="$DB_TEMP" --batch --raw --execute="$1"; }
-db_run() {
+db_run() (
   DB_TEMP=""
-  trap db_cleanup RETURN
-  db_init || { db_cleanup; trap - RETURN; return 1; }
+  trap db_cleanup EXIT
+  db_init || exit 1
   "$@"
-  local status=$?
-  db_cleanup
-  trap - RETURN
-  return "$status"
-}
+)
