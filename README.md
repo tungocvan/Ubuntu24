@@ -44,7 +44,7 @@ Script backup chỉ sao lưu các file cấu hình chọn lọc (không bao gồ
 
 ## Yêu cầu
 
-Ubuntu Server 24.04 LTS, Bash, coreutils. `collect-os-config.sh` và `backup-system-config.sh` yêu cầu root; các tiện ích không có sẽ được đánh dấu unavailable. Docker là tùy chọn.
+Ubuntu 24.04 LTS hoặc 26.04 LTS (các bản Ubuntu khác: best-effort), Bash, coreutils. `collect-os-config.sh` và `backup-system-config.sh` yêu cầu root; các tiện ích không có sẽ được đánh dấu unavailable. Docker là tùy chọn.
 
 ## Kiểm tra
 
