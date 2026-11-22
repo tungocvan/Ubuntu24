@@ -3,7 +3,9 @@ set -Eeuo pipefail
 umask 077
 
 INVENTORY_DIR="${UBUNTU24_INVENTORY_DIR:-/var/local/ubuntu24/inventory}"
-OUTPUT_DIR="${UBUNTU24_EXPORT_DIR:-}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+PROJECT_DIR="$(dirname -- "$SCRIPT_DIR")"
+OUTPUT_DIR="${UBUNTU24_EXPORT_DIR:-$PROJECT_DIR/exports}"
 SNAPSHOT=""
 LATEST=false
 
@@ -14,7 +16,7 @@ Exports one local OS inventory snapshot into a new .tar.gz archive.
   --latest             Select latest timestamp-named snapshot (default)
   --snapshot NAME      Select a specific snapshot directory by basename
   --inventory-dir DIR  Inventory root (default: /var/local/ubuntu24/inventory)
-  --output-dir DIR     Export directory (default: /var/local/ubuntu24/exports)
+  --output-dir DIR     Export directory (default: PROJECT_ROOT/exports)
   --help               Show this help
 Archives are never overwritten. Requires root. No upload is performed.
 EOF
@@ -34,7 +36,6 @@ done
 [[ $EUID -eq 0 ]] || die "Run with sudo/root"
 [[ "$INVENTORY_DIR" == /* && "$INVENTORY_DIR" != "/" ]] || die "Inventory directory must be absolute"
 [[ -d "$INVENTORY_DIR" && ! -L "$INVENTORY_DIR" ]] || die "Inventory directory missing or symlink"
-[[ -n "$OUTPUT_DIR" ]] || OUTPUT_DIR="/var/local/ubuntu24/exports"
 [[ "$OUTPUT_DIR" == /* && "$OUTPUT_DIR" != "/" && ! -L "$OUTPUT_DIR" ]] || die "Unsafe output directory"
 [[ "$INVENTORY_DIR" != "$OUTPUT_DIR" ]] || die "Output directory must differ from inventory directory"
 [[ -z "$SNAPSHOT" || "$LATEST" == false ]] || die "Use --latest or --snapshot, not both"
@@ -55,9 +56,22 @@ SOURCE="$INVENTORY_DIR/$SNAPSHOT"
 if find "$SOURCE" -mindepth 1 ! -type f -print -quit | grep -q .; then
   die "Snapshot contains symlinks or unsupported entries"
 fi
-install -d -m 0700 -- "$OUTPUT_DIR"
-chmod 0700 -- "$OUTPUT_DIR"
-[[ ! -L "$OUTPUT_DIR" ]] || die "Output directory is a symlink"
+EXPORT_DIR_PREEXISTED=1
+if [[ ! -e "$OUTPUT_DIR" && ! -L "$OUTPUT_DIR" ]]; then
+  unset EXPORT_DIR_PREEXISTED
+  install -d -m 0700 -- "$OUTPUT_DIR"
+fi
+[[ -d "$OUTPUT_DIR" && ! -L "$OUTPUT_DIR" ]] || die "Unsafe export directory"
+EXPORT_UID=0
+EXPORT_GID=0
+if [[ "$OUTPUT_DIR" == "$PROJECT_DIR/exports" && "${SUDO_UID:-}" =~ ^[0-9]+$ && "${SUDO_GID:-}" =~ ^[0-9]+$ && "${SUDO_UID:-0}" -ne 0 ]]; then
+  EXPORT_UID="$SUDO_UID"
+  EXPORT_GID="$SUDO_GID"
+  # New directory only: make it accessible to the invoking sudo user.
+  if [[ -z "${EXPORT_DIR_PREEXISTED:-}" ]]; then
+    chown "$EXPORT_UID:$EXPORT_GID" -- "$OUTPUT_DIR"
+  fi
+fi
 DEST=""
 for ((i=0; i<1000; i++)); do
   printf -v suffix '%03d' "$i"
@@ -72,6 +86,7 @@ if ! gzip -t "$DEST" || ! tar -tzf "$DEST" >/dev/null; then
   die "Archive validation failed; file preserved for investigation: $DEST"
 fi
 chmod 0600 -- "$DEST"
+chown "$EXPORT_UID:$EXPORT_GID" -- "$DEST"
 log SUCCESS "Export completed: $DEST"
 log INFO "Snapshot: $SOURCE"
 log INFO "Archive size: $(du -h "$DEST" | cut -f1)"
