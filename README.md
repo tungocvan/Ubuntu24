@@ -108,7 +108,7 @@ Prerequisites: Ubuntu Server with root access; server reachable by a public IPv4
 
 ```bash
 cd ~/projects/github/tungocvan/Ubuntu24
-bash -n scripts/menu.sh scripts/vpn/wireguard.sh
+bash -n scripts/menu.sh scripts/vpn/wireguard.sh scripts/vpn/mariadb-proxy.sh
 sudo bash scripts/menu.sh
 # 3) Manage WireGuard VPN -> 2) Setup Server
 # Enter the server's PUBLIC IPv4 or DNS (not the client's address)
@@ -127,9 +127,9 @@ Client configuration is generated at `/var/lib/ubuntu24/wireguard/clients/laptop
 
 **Firewall:** after confirming the active SSH allow rule, allow WireGuard's UDP port on the server. For UFW, review `sudo ufw status numbered` before adding `sudo ufw allow 51820/udp comment 'WireGuard VPN'`. Do not enable/reset UFW blindly on a remote server. If the cloud provider has a security group, allow UDP 51820 there as well. Do not allow TCP 3306 on the public interface.
 
-**MariaDB access:** WireGuard connectivity alone does not make a database bound to `127.0.0.1:3306` reachable from `10.77.0.1`. First verify `sudo ss -lntp | grep ':3306'` and `sudo wg show wg-ubuntu24`. A controlled next step is a VPN-interface-only TCP proxy bound to `10.77.0.1:3306` forwarding to `127.0.0.1:3306`, or an explicitly reviewed MariaDB listener/firewall change. **Neither is enabled by this version**. Do not switch MariaDB to `0.0.0.0` without separately auditing host firewall, Docker port exposure and network access.
+**MariaDB access:** WireGuard connectivity alone does not make a database bound to `127.0.0.1:3306` reachable from `10.77.0.1`. First verify `sudo ss -lntp | grep ':3306'` and `sudo wg show wg-ubuntu24`. A controlled next step is a VPN-interface-only TCP proxy bound to `10.77.0.1:3306` forwarding to `127.0.0.1:3306`, or an explicitly reviewed MariaDB listener/firewall change. **An optional VPN-only proxy is now available in the menu (option 4); it is not enabled automatically.** Do not switch MariaDB to `0.0.0.0` without separately auditing host firewall, Docker port exposure and network access.
 
-When a VPN-only listener has been configured, connect from the laptop with `mariadb --host=10.77.0.1 --port=3306 --protocol=tcp --user=YOUR_DB_USER -p`. Use a dedicated least-privilege database user. If a local TCP proxy forwards to loopback, MariaDB sees the proxy's local address, not the laptop's WireGuard IP; check `SELECT USER(), CURRENT_USER();` before assigning `user@host` grants. Do not assume the earlier `Enable Remote Access for User` option is required for a local proxy.
+For a database bound to loopback, select menu `3) Manage WireGuard VPN -> 4) Enable VPN-only MariaDB Proxy`. It requires active WireGuard and a MariaDB listener at `127.0.0.1:3306`, installs `socat` with confirmation, and enables a systemd service listening **only** on `10.77.0.1:3306`. Use menu option 5 to stop/disable the proxy (this interrupts active remote DB sessions). Review UFW: allow TCP/3306 on the WireGuard interface only if your firewall blocks it; do not open TCP/3306 publicly.\n\nWhen a VPN-only listener has been configured, connect from the laptop with `mariadb --host=10.77.0.1 --port=3306 --protocol=tcp --user=YOUR_DB_USER -p`. Use a dedicated least-privilege database user. If a local TCP proxy forwards to loopback, MariaDB sees the proxy's local address, not the laptop's WireGuard IP; check `SELECT USER(), CURRENT_USER();` before assigning `user@host` grants. Do not assume the earlier `Enable Remote Access for User` option is required for a local proxy.
 
 **Diagnostics:** `sudo wg show wg-ubuntu24`, `sudo systemctl status wg-quick@wg-ubuntu24`, `sudo journalctl -u wg-quick@wg-ubuntu24 -n 50 --no-pager`, and on the client `ping 10.77.0.1`. WireGuard status can show peers even without a recent successful handshake; inspect `latest handshake` and data counters.
 
