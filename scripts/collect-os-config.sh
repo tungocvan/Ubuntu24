@@ -24,7 +24,11 @@ done
 [[ -r /etc/os-release ]] || die "Missing /etc/os-release"
 # shellcheck disable=SC1091
 source /etc/os-release
-[[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == "24.04" ]] || die "Only Ubuntu 24.04 is supported"
+[[ "${ID:-}" == ubuntu ]] || die "Only Ubuntu is supported (detected: ${ID:-unknown})"
+case "${VERSION_ID:-unknown}" in
+  24.04|26.04) log INFO "Supported Ubuntu release: ${VERSION_ID}" ;;
+  *) log WARNING "Ubuntu ${VERSION_ID:-unknown} is not explicitly tested; collecting best-effort inventory" ;;
+esac
 [[ "$OUTPUT_DIR" == /* && "$OUTPUT_DIR" != "/" ]] || die "Output directory must be an absolute path other than /"
 [[ ! -L "$OUTPUT_DIR" ]] || die "Output directory must not be a symlink"
 install -d -m 0700 -- "$OUTPUT_DIR"
