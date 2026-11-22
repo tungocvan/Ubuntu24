@@ -27,6 +27,10 @@ db_sizes() {
   db_query "SELECT s.SCHEMA_NAME AS database_name, COUNT(t.TABLE_NAME) AS table_count, COALESCE(ROUND(SUM(COALESCE(t.DATA_LENGTH,0)+COALESCE(t.INDEX_LENGTH,0))/1024/1024,2),0) AS size_mb FROM information_schema.SCHEMATA AS s LEFT JOIN information_schema.TABLES AS t ON s.SCHEMA_NAME=t.TABLE_SCHEMA GROUP BY s.SCHEMA_NAME ORDER BY size_mb DESC, s.SCHEMA_NAME;"
 }
 db_connections() { db_query 'SHOW PROCESSLIST;'; }
+db_show_grants() {
+  printf '[INFO] Grants for current database account:\n'
+  db_query 'SHOW GRANTS FOR CURRENT_USER();'
+}
 db_list_users() {
   printf '[INFO] Listing database accounts requires permission to read mysql.user.\n'
   if ! db_query 'SELECT User AS username, Host AS allowed_host FROM mysql.user ORDER BY User,Host;'; then
@@ -183,7 +187,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n0) Back\nChoose [0-10]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n0) Back\nChoose [0-11]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -196,6 +200,7 @@ main() {
       8) db_action db_create_user || true; db_pause ;;
       9) db_action db_list_users || true; db_pause ;;
       10) db_action db_delete_user || true; db_pause ;;
+      11) db_action db_show_grants || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
