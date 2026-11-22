@@ -367,6 +367,60 @@ db_configure_connection() {
   printf '[SUCCESS] db.inc updated. Reconnecting...\n'
   db_connect
 }
+db_enable_remote_user() {
+  local name host database level privileges password confirm answer exists status
+  printf '[INFO] Creates a separate MariaDB account for an explicitly allowed remote IPv4 address.\n'
+  printf '[WARNING] Does not change bind-address, firewall, or server networking.\n'
+  printf 'Existing local username: '; IFS= read -r name || return 0
+  printf 'Existing account host [localhost]: '; local source_host; IFS= read -r source_host || return 0
+  source_host="${source_host:-localhost}"
+  db_validate_target_account "$name" "$source_host" || return 1
+  printf 'Allowed remote IPv4 (single IP, no wildcard): '; IFS= read -r host || return 0
+  if [[ ! "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    printf '[ERROR] Specify one IPv4 address, not a wildcard or subnet.\n'; return 1
+  fi
+  local octet; local -a octets
+  IFS='.' read -r -a octets <<< "$host"
+  for octet in "${octets[@]}"; do
+    [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+    (( 10#$octet <= 255 )) || return 1
+  done
+  [[ "$host" != 0.* && "$host" != 127.* && "$host" != 255.* ]] || { printf '[ERROR] Invalid remote address.\n'; return 1; }
+  if db_account_exists "$name" "$host"; then
+    printf '[ERROR] Remote account already exists. No changes made.\n'; return 1
+  else
+    status=$?
+    (( status == 1 )) || { printf '[ERROR] Cannot verify remote account availability.\n'; return 1; }
+  fi
+  printf 'Database to allow: '; IFS= read -r database || return 0
+  [[ "$database" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+  case "$database" in mysql|information_schema|performance_schema|sys|admin_tools) printf '[ERROR] Protected database.\n'; return 1 ;; esac
+  exists=$(db_query "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='$database';") || return 1
+  [[ "$(printf '%s\n' "$exists" | tail -n 1)" == 1 ]] || { printf '[ERROR] Database not found or not visible.\n'; return 1; }
+  printf '1) SELECT only\n2) SELECT, INSERT, UPDATE, DELETE\nChoose [1-2]: '
+  IFS= read -r level || return 0
+  case "$level" in 1) privileges='SELECT' ;; 2) privileges='SELECT, INSERT, UPDATE, DELETE' ;; *) return 1 ;; esac
+  printf 'New remote account password (hidden): '; IFS= read -r -s password || return 0; printf '\n'
+  printf 'Confirm password (hidden): '; IFS= read -r -s confirm || return 0; printf '\n'
+  [[ -n "$password" && "$password" == "$confirm" ]] || { printf '[ERROR] Password mismatch or empty.\n'; return 1; }
+  unset confirm
+  printf '[WARNING] Create %s@%s and grant %s on %s.* only.\n' "$name" "$host" "$privileges" "$database"
+  printf 'Type ENABLE to confirm: '; IFS= read -r answer || return 0
+  [[ "$answer" == ENABLE ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+  local sql_password
+  sql_password="${password//\'/\'\'}"
+  unset password
+  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+    unset sql_password
+    printf '[ERROR] CREATE USER failed. No privileges granted.\n'; return 1
+  fi
+  unset sql_password
+  if ! printf "GRANT %s ON \`%s\`.* TO '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
+    printf '[ERROR] User created, but GRANT failed. Account remains without database privileges; review it manually.\n'; return 1
+  fi
+  printf '[SUCCESS] Remote account created and database permissions granted.\n'
+  printf '[INFO] Verify bind-address, UFW allowlist, network route, and TLS separately before testing remote access.\n'
+}
 db_disconnect() {
   DB_CONNECTED=0
   DB_ENGINE=''
@@ -393,7 +447,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n0) Back\nChoose [0-15]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n0) Back\nChoose [0-16]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -411,6 +465,7 @@ main() {
       13) db_action db_show_user_grants || true; db_pause ;;
       14) db_action db_revoke_privileges || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
+      16) db_action db_enable_remote_user || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
