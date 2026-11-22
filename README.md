@@ -13,7 +13,8 @@ Ubuntu24/
     ├── collect-os-config.sh
     ├── status.sh
     ├── check-docker.sh
-    └── backup-system-config.sh
+    ├── backup-system-config.sh
+    └── export-os-report.sh
 ```
 
 ## Bắt đầu
@@ -34,7 +35,11 @@ Báo cáo OS mặc định lưu trong `/var/local/ubuntu24/inventory/`. Mỗi l�
 sudo ./scripts/collect-os-config.sh --help
 sudo ./scripts/collect-os-config.sh --output-dir /var/local/ubuntu24/inventory
 sudo ./scripts/backup-system-config.sh
+sudo bash scripts/export-os-report.sh --latest
+sudo bash scripts/export-os-report.sh --snapshot 20261122T033707Z_000
 ```
+
+Bản xuất được lưu trong `/var/local/ubuntu24/exports/` với tên duy nhất, không ghi đè. Dùng `--output-dir /duong/dan/tuyet/doi` để đổi thư mục đích. File export thuộc root, quyền 0600. Chỉ chia sẻ sau khi rà soát thông tin nhạy cảm.
 
 ## Chính sách dữ liệu
 
