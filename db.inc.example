@@ -1,0 +1,5 @@
+# Copy to db.inc, set password locally, chmod 600 db.inc
+username=tungocvan
+password=CHANGE_ME
+hostname=127.0.0.1
+port=3306
