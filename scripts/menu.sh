@@ -8,7 +8,7 @@ trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
 usage() {
   cat <<'HELP'
 Usage: sudo bash scripts/menu.sh [--help]
-Manage local Ubuntu users/groups interactively. No home deletion or SSH changes.
+Manage Ubuntu users/groups and inspect native databases.
 HELP
 }
 check_environment() {
@@ -168,6 +168,11 @@ manage_ubuntu() {
     esac
   done
 }
+manage_database() {
+  local script_dir
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  bash "$script_dir/database/menu.sh"
+}
 main() {
   if (($#)); then
     if (($# == 1)) && [[ "$1" == --help || "$1" == -h ]]; then usage; return; fi
@@ -176,10 +181,11 @@ main() {
   check_environment
   local choice
   while true; do
-    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n0) Exit\nChoose [0-1]: '
+    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n0) Exit\nChoose [0-2]: '
     IFS= read -r choice || { printf '\n'; break; }
     case "$choice" in
       1) manage_ubuntu ;;
+      2) manage_database ;;
       0) break ;;
       *) log WARNING 'Invalid selection' ;;
     esac
