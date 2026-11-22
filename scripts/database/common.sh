@@ -29,7 +29,14 @@ db_init() {
   ((10#$port >= 1 && 10#$port <= 65535)) || return 1
   [[ "$username" != *$'\n'* && "$password" != *$'\n'* && "$hostname" != *$'\n'* ]] || return 1
   [[ "$username" != *$'\r'* && "$password" != *$'\r'* && "$hostname" != *$'\r'* ]] || return 1
-  command -v mariadb >/dev/null || { printf '[ERROR] mariadb client not installed.\n' >&2; return 1; }
+  if command -v mariadb >/dev/null 2>&1; then
+    DB_CLIENT=mariadb
+  elif command -v mysql >/dev/null 2>&1; then
+    DB_CLIENT=mysql
+  else
+    printf '[ERROR] Install mariadb-client or mysql-client.\n' >&2
+    return 1
+  fi
   DB_TEMP=$(mktemp)
   chmod 600 "$DB_TEMP"
   # Escape characters that have meaning in MariaDB option files.
@@ -38,7 +45,7 @@ db_init() {
   escaped="${escaped//\"/\\\"}"
   printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$username" "$escaped" "$hostname" "$port" > "$DB_TEMP"
 }
-db_query() { mariadb --defaults-extra-file="$DB_TEMP" --batch --raw --execute="$1"; }
+db_query() { "$DB_CLIENT" --defaults-extra-file="$DB_TEMP" --batch --raw --execute="$1"; }
 db_run() (
   DB_TEMP=""
   trap db_cleanup EXIT
