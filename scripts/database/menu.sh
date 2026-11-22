@@ -27,6 +27,9 @@ db_sizes() {
   db_query "SELECT s.SCHEMA_NAME AS database_name, COUNT(t.TABLE_NAME) AS table_count, COALESCE(ROUND(SUM(COALESCE(t.DATA_LENGTH,0)+COALESCE(t.INDEX_LENGTH,0))/1024/1024,2),0) AS size_mb FROM information_schema.SCHEMATA AS s LEFT JOIN information_schema.TABLES AS t ON s.SCHEMA_NAME=t.TABLE_SCHEMA GROUP BY s.SCHEMA_NAME ORDER BY size_mb DESC, s.SCHEMA_NAME;"
 }
 db_connections() { db_query 'SHOW PROCESSLIST;'; }
+DB_CONNECTED=0
+DB_ENGINE=''
+DB_VERSION=''
 db_create_user() {
   local name host password confirm_password answer sql_name sql_host sql_password
   printf 'New database username: '
@@ -139,9 +142,6 @@ main "$@"
   fi
   unset sql_password
 }
-DB_CONNECTED=0
-DB_ENGINE=''
-DB_VERSION=''
 db_connect() {
   local result version
   if ! result=$(db_run db_test); then
