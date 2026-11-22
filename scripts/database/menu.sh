@@ -208,7 +208,7 @@ db_show_user_grants() {
   printf '[INFO] Grants for %s@%s:\n' "$name" "$host"
   if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
     printf '[ERROR] MariaDB denied SHOW GRANTS for another account.\n'
-    printf '[INFO] Run as an administrator: sudo mariadb -e "SHOW GRANTS FOR '\''%s'\''@'\''%s'\'';"\n' "$name" "$host"
+    printf '[INFO] Use sudo mariadb and run SHOW GRANTS FOR the target account.\n'
     return 1
   fi
 }
@@ -242,7 +242,9 @@ db_revoke_privileges() {
     return 1
   fi
   printf '[INFO] Current grants for %s@%s:\n' "$name" "$host"
-  db_query "SHOW GRANTS FOR '$name'@'$host';" || return 1
+  if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
+    printf '[WARNING] Cannot inspect target grants with this account. Check them separately using sudo mariadb.\n'
+  fi
   printf '\n1) Revoke READ ONLY privilege (SELECT)\n2) Revoke READ/WRITE privileges\n3) Revoke DEVELOPER privileges\n4) Revoke ALL privileges on selected database\nChoose [1-4]: '
   IFS= read -r level || return 0
   case "$level" in
@@ -257,11 +259,11 @@ db_revoke_privileges() {
   printf 'Type REVOKE to confirm: '
   IFS= read -r answer || return 0
   [[ "$answer" == REVOKE ]] || { printf '[INFO] Cancelled.\n'; return 0; }
-  if printf "REVOKE %s ON `%s`.* FROM '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
+  if printf "REVOKE %s ON \`%s\`.* FROM '%s'@'%s';\n" "$privileges" "$database" "$name" "$host" | db_exec_stdin; then
     printf '[SUCCESS] Revocation completed. Verify remaining grants below:\n'
     if ! db_query "SHOW GRANTS FOR '$name'@'$host';"; then
       printf '[WARNING] Revocation succeeded, but this account cannot display target grants.\n'
-      printf '[INFO] Verify with sudo mariadb -e "SHOW GRANTS FOR '\''%s'\''@'\''%s'\'';"\n' "$name" "$host"
+      printf '[INFO] Use sudo mariadb and run SHOW GRANTS FOR the target account.\n'
     fi
   else
     printf '[ERROR] REVOKE failed; check GRANT OPTION and existing privileges. No success reported.\n'
