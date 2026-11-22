@@ -492,6 +492,55 @@ db_grant_create_drop() {
   printf '[SUCCESS] CREATE/DROP granted for %s@%s on %s.\n' "$name" "$host" "$scope_sql"
   printf '[INFO] Use SHOW GRANTS FOR the target account to verify effective grants.\n'
 }
+db_offer_super_admin_connection() {
+  local name="$1" password="$2" answer key value hostname='' port='' candidate opts backup='' oldmask escaped
+  printf 'Update db.inc to use %s for future menu connections? Type YES: ' "$name"
+  IFS= read -r answer || return 0
+  [[ "$answer" == YES ]] || { printf '[INFO] db.inc unchanged.\\n'; return 0; }
+  if [[ ! -f "$DB_CONFIG" || -L "$DB_CONFIG" ]]; then
+    printf '[ERROR] Unsafe or missing db.inc; no changes made.\\n'; return 1
+  fi
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    case "$key" in
+      hostname) hostname="$value" ;;
+      port) port="$value" ;;
+    esac
+  done < "$DB_CONFIG"
+  if [[ -z "$hostname" || ! "$port" =~ ^[0-9]+$ ]]; then
+    printf '[ERROR] Cannot read existing connection settings.\\n'; return 1
+  fi
+  oldmask=$(umask); umask 077
+  if ! candidate=$(mktemp "$PROJECT_DIR/.db.inc.new.XXXXXXXX"); then
+    umask "$oldmask"; return 1
+  fi
+  if ! opts=$(mktemp); then
+    umask "$oldmask"; rm -f -- "$candidate"; return 1
+  fi
+  umask "$oldmask"
+  escaped="${password//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  printf '[client]\\nuser="%s"\\npassword="%s"\\nhost="%s"\\nport=%s\\nprotocol=tcp\\n' "$name" "$escaped" "$hostname" "$port" > "$opts"
+  if ! "$DB_CLIENT" --defaults-extra-file="$opts" --batch --execute='SELECT 1;' >/dev/null 2>&1; then
+    rm -f -- "$candidate" "$opts"
+    printf '[ERROR] New account cannot connect via existing TCP host/port. db.inc unchanged.\\n'; return 1
+  fi
+  rm -f -- "$opts"
+  printf 'username=%s\\npassword=%s\\nhostname=%s\\nport=%s\\n' "$name" "$password" "$hostname" "$port" > "$candidate"
+  chmod 600 "$candidate"
+  if ! backup=$(mktemp "$PROJECT_DIR/.db.inc.backup.XXXXXXXX"); then
+    rm -f -- "$candidate"; return 1
+  fi
+  if ! cp -p -- "$DB_CONFIG" "$backup"; then
+    rm -f -- "$candidate" "$backup"; return 1
+  fi
+  chmod 600 "$backup"
+  if ! mv -- "$candidate" "$DB_CONFIG"; then
+    rm -f -- "$candidate"; return 1
+  fi
+  DB_CONNECTED=0
+  printf '[SUCCESS] db.inc updated. Previous credentials backed up at %s\\n' "$backup"
+  printf '[INFO] Reconnect with menu option 1 to activate the new account.\\n'
+}
 db_create_super_admin() {
   local name host password confirm answer sql_password status current grants
   printf '[WARNING] This creates a server-wide SUPER ADMIN with ALL PRIVILEGES and GRANT OPTION.\n'
@@ -499,7 +548,7 @@ db_create_super_admin() {
   printf '[INFO] Requires a database connection with CREATE USER and global GRANT OPTION.\n'
   current=$(db_query 'SELECT CURRENT_USER();' | tail -n 1) || return 1
   grants=$(db_query 'SHOW GRANTS FOR CURRENT_USER();') || return 1
-  if ! printf '%s\\n' "$grants" | grep -Fq 'ALL PRIVILEGES ON *.*' || ! printf '%s\\n' "$grants" | grep -Fq 'WITH GRANT OPTION'; then
+  if ! printf '%s\n' "$grants" | grep -Fq 'ALL PRIVILEGES ON *.*' || ! printf '%s\n' "$grants" | grep -Fq 'WITH GRANT OPTION'; then
     printf '[ERROR] Connected account %s does not show global ALL PRIVILEGES WITH GRANT OPTION.\n' "$current"
     printf '[INFO] Connect using an authorized DBA account. This menu uses TCP credentials from db.inc, not sudo mariadb socket login.\n'
     return 1
@@ -538,34 +587,6 @@ db_create_super_admin() {
   IFS= read -r -s confirm || return 0; printf '\n'
   if [[ ${#password} -lt 16 || "$password" != "$confirm" ]]; then
     unset password confirm
-    printf '[ERROR] Password must be at least 16 characters and match confirmation.\\n'; return 1
-  fi
-  unset confirm
-  printf '[WARNING] CREATE %s@%s with global ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
-  printf 'Re-enter exact account (%s@%s): ' "$name" "$host"
-  IFS= read -r answer || { unset password; return 0; }
-  if [[ "$answer" != "$name@$host" ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
-  printf 'Type CREATE SUPER ADMIN to apply: '
-  IFS= read -r answer || { unset password; return 0; }
-  if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
-  # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
-  sql_password="${password//\'/\'\'}"
-  unset password
-  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
-    unset sql_password
-    printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
-  fi
-  unset sql_password
-  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
-    printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
-    return 1
-  fi
-  printf '[SUCCESS] Created global super admin %s@%s with ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
-  printf '[WARNING] This does not clone root authentication plugins or MariaDB PROXY grants.\n'
-  printf '[INFO] Verify with an authorized DBA account: SHOW GRANTS FOR the new account.\n'
-}
-\\n'* || "$password" == *
-    unset password confirm
     printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
   fi
   unset confirm
@@ -578,47 +599,21 @@ db_create_super_admin() {
   if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
   # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
   sql_password="${password//\'/\'\'}"
-  unset password
   if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
-    unset sql_password
+    unset sql_password password
     printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
   fi
   unset sql_password
   if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
+    unset password
     printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
     return 1
   fi
   printf '[SUCCESS] Created global super admin %s@%s with ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
   printf '[WARNING] This does not clone root authentication plugins or MariaDB PROXY grants.\n'
   printf '[INFO] Verify with an authorized DBA account: SHOW GRANTS FOR the new account.\n'
-}
-\\r'* ]]; then
-    unset password confirm
-    printf '[ERROR] Password must be at least 16 characters and match confirmation.\n'; return 1
-  fi
-  unset confirm
-  printf '[WARNING] CREATE %s@%s with global ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
-  printf 'Re-enter exact account (%s@%s): ' "$name" "$host"
-  IFS= read -r answer || { unset password; return 0; }
-  if [[ "$answer" != "$name@$host" ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
-  printf 'Type CREATE SUPER ADMIN to apply: '
-  IFS= read -r answer || { unset password; return 0; }
-  if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
-  # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
-  sql_password="${password//\'/\'\'}"
+  db_offer_super_admin_connection "$name" "$password"
   unset password
-  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
-    unset sql_password
-    printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
-  fi
-  unset sql_password
-  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
-    printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
-    return 1
-  fi
-  printf '[SUCCESS] Created global super admin %s@%s with ALL PRIVILEGES WITH GRANT OPTION.\n' "$name" "$host"
-  printf '[WARNING] This does not clone root authentication plugins or MariaDB PROXY grants.\n'
-  printf '[INFO] Verify with an authorized DBA account: SHOW GRANTS FOR the new account.\n'
 }
 db_disconnect() {
   DB_CONNECTED=0
