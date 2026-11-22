@@ -94,3 +94,7 @@ Trong Manage Database, Connect Database trước rồi chọn 12) Grant Database
 ## Inspect and revoke database user privileges
 
 Manage Database: 13) Show Database User Grants runs SHOW GRANTS for a validated existing account; 14) Revoke Database Privileges shows existing grants, requires a database name, offers SELECT / READ-WRITE / DEVELOPER / ALL PRIVILEGES on that database, and requires typing REVOKE. It does not delete user, database, or data. Revocation can interrupt applications and requires suitable GRANT OPTION. REVOKE ALL PRIVILEGES ON db.* does not necessarily revoke GRANT OPTION; inspect SHOW GRANTS and revoke that option separately if applicable. Privileges inherited from global grants or roles are not removed by database-scoped revocation.
+
+## Database connection setup and login privileges
+
+Manage Database option 15 configures hostname, port, username and a hidden password. The new credentials are tested over TCP before saving; type `SAVE` to write `db.inc`. Existing configuration is backed up to a private `.db.inc.backup.*` file (contains credentials) and the new file is mode 600. On connection failure, choose retry, configure, or cancel. On successful connection, the menu displays `USER()`, `CURRENT_USER()` and `SHOW GRANTS FOR CURRENT_USER()`. This is the server's grant output, not an inferred effective privilege summary. Review and securely retire credential backups when no longer needed.
