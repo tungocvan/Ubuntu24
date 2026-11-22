@@ -60,3 +60,11 @@ shellcheck scripts/*.sh
 ```
 
 Không tự động cập nhật OS, thay đổi firewall, xóa volume/container hay restart service.
+
+## Menu quản trị User & Group
+
+```bash
+sudo bash scripts/menu.sh
+```
+
+Menu cho phép liệt kê user/group, đổi mật khẩu (kể cả root), tạo user với home directory, thêm vào supplementary group có sẵn, và tạo group. Các thao tác thay đổi cần xác nhận `YES`. Mật khẩu nhập qua `passwd` tương tác; không lưu vào logs. Không thay đổi cấu hình SSH hoặc tự động cấp sudo. Chỉ chạy trên máy chủ tin cậy và rà soát trước khi tạo tài khoản.
