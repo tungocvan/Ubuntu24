@@ -16,6 +16,7 @@ data/
 backups/
 logs/
 inventory/
+exports/
 snapshots/
 *.tar.gz
 *.log
