@@ -540,17 +540,36 @@ db_offer_super_admin_connection() {
   printf '[SUCCESS] db.inc updated. Previous credentials backed up at %s\n' "$backup"
   printf '[INFO] Reconnect with menu option 1 to activate the new account.\n'
 }
+db_super_admin_exec() {
+  local mode="$1"
+  if [[ "$mode" == socket ]]; then
+    sudo -n "$DB_CLIENT" --no-defaults --protocol=socket --user=root --batch >/dev/null 2>/dev/null
+  else
+    db_exec_stdin
+  fi
+}
 db_create_super_admin() {
-  local name host password confirm answer sql_password status current grants
+  local name host password confirm answer sql_password status current grants admin_mode=tcp
   printf '[WARNING] This creates a server-wide SUPER ADMIN with ALL PRIVILEGES and GRANT OPTION.\n'
   printf '[WARNING] The account can read, modify, or delete ALL databases and manage other users.\n'
   printf '[INFO] Requires a database connection with CREATE USER and global GRANT OPTION.\n'
   current=$(db_query 'SELECT CURRENT_USER();' | tail -n 1) || return 1
   grants=$(db_query 'SHOW GRANTS FOR CURRENT_USER();') || return 1
   if ! printf '%s\n' "$grants" | grep -Fq 'ALL PRIVILEGES ON *.*' || ! printf '%s\n' "$grants" | grep -Fq 'WITH GRANT OPTION'; then
-    printf '[ERROR] Connected account %s does not show global ALL PRIVILEGES WITH GRANT OPTION.\n' "$current"
-    printf '[INFO] Connect using an authorized DBA account. This menu uses TCP credentials from db.inc, not sudo mariadb socket login.\n'
-    return 1
+    printf '[WARNING] Connected account %s lacks global DBA grants.\n' "$current"
+    printf '[INFO] Local root via sudo Unix socket is available as an optional fallback.\n'
+    printf 'Type SOCKET to authorize local root fallback: '
+    IFS= read -r answer || return 0
+    [[ "$answer" == SOCKET ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+    if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+      printf '[ERROR] sudo authorization unavailable. Run sudo -v in a terminal and retry.\n'; return 1
+    fi
+    if ! current=$(sudo -n "$DB_CLIENT" --no-defaults --protocol=socket --user=root --batch --skip-column-names --execute='SELECT CURRENT_USER();' 2>/dev/null); then
+      printf '[ERROR] Cannot authenticate local database root through Unix socket.\n'; return 1
+    fi
+    [[ "$current" == root@localhost ]] || { printf '[ERROR] Socket did not authenticate as root@localhost.\n'; return 1; }
+    admin_mode=socket
+    printf '[SUCCESS] Authenticated local database root via Unix socket.\n'
   fi
   printf 'New super admin username: '
   IFS= read -r name || return 0
@@ -598,12 +617,12 @@ db_create_super_admin() {
   if [[ "$answer" != 'CREATE SUPER ADMIN' ]]; then unset password; printf '[INFO] Cancelled.\n'; return 0; fi
   # NO_BACKSLASH_ESCAPES makes doubled single quotes safe for literal passwords.
   sql_password="${password//\'/\'\'}"
-  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
+  if ! printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_super_admin_exec "$admin_mode"; then
     unset sql_password password
     printf '[ERROR] CREATE USER failed; no grants attempted.\n'; return 1
   fi
   unset sql_password
-  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_exec_stdin; then
+  if ! printf "GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION;\n" "$name" "$host" | db_super_admin_exec "$admin_mode"; then
     unset password
     printf '[ERROR] Account created but global GRANT failed. Account remains; review/revoke it using a DBA account.\n'
     return 1
