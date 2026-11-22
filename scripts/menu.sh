@@ -8,7 +8,7 @@ trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
 usage() {
   cat <<'HELP'
 Usage: sudo bash scripts/menu.sh [--help]
-Manage local Ubuntu users/groups interactively. No deletion or SSH changes.
+Manage local Ubuntu users/groups interactively. No home deletion or SSH changes.
 HELP
 }
 check_environment() {
@@ -51,7 +51,7 @@ regular_gid_min() {
 list_users_menu() {
   local choice
   while true; do
-    printf '\\n--- List Users ---\\n1) Regular Users\\n2) All Users\\n0) Back\\nChoose: '
+    printf '\n--- List Users ---\n1) Regular Users\n2) All Users\n0) Back\nChoose: '
     IFS= read -r choice || return
     case "$choice" in
       1) list_users regular; pause ;;
@@ -64,7 +64,7 @@ list_users_menu() {
 list_groups_menu() {
   local choice
   while true; do
-    printf '\\n--- List Groups ---\\n1) Regular Groups\\n2) All Groups\\n0) Back\\nChoose: '
+    printf '\n--- List Groups ---\n1) Regular Groups\n2) All Groups\n0) Back\nChoose: '
     IFS= read -r choice || return
     case "$choice" in
       1) list_groups regular; pause ;;
@@ -76,11 +76,15 @@ list_groups_menu() {
 }
 list_users() {
   printf '\n%-25s %-8s %-8s %-30s %s\n' USER UID GID HOME SHELL
-  getent passwd | awk -F: '{printf "%-25s %-8s %-8s %-30s %s\n",$1,$3,$4,$6,$7}'
+  local min=0
+  [[ "${1:-all}" == regular ]] && min=$(regular_uid_min)
+  getent passwd | awk -F: -v min="$min" '($3 >= min && $1 != "nobody") {printf "%-25s %-8s %-8s %-30s %s\n",$1,$3,$4,$6,$7}'
 }
 list_groups() {
   printf '\n%-25s %-8s %s\n' GROUP GID MEMBERS
-  getent group | awk -F: '{printf "%-25s %-8s %s\n",$1,$3,$4}'
+  local min=0
+  [[ "${1:-all}" == regular ]] && min=$(regular_gid_min)
+  getent group | awk -F: -v min="$min" '($3 >= min && $1 != "nogroup") {printf "%-25s %-8s %s\n",$1,$3,$4}'
   log INFO 'MEMBERS excludes users whose primary group is this group.'
 }
 change_password() {
@@ -104,7 +108,7 @@ delete_user() {
   fi
   home=$(getent passwd "$username" | awk -F: '{print $6}')
   shell=$(getent passwd "$username" | awk -F: '{print $7}')
-  printf 'User: %s | UID: %s | Home: %s | Shell: %s\\n' "$username" "$uid" "$home" "$shell"
+  printf 'User: %s | UID: %s | Home: %s | Shell: %s\n' "$username" "$uid" "$home" "$shell"
   log WARNING 'userdel will remove the account, but NOT its home directory or files.'
   printf 'Re-enter the exact username to confirm deletion: '
   IFS= read -r confirm_name || return 0
@@ -149,8 +153,8 @@ create_user() {
 manage_ubuntu() {
   local choice
   while true; do
-    printf '\\n=== Manage Ubuntu ===\\n'
-    printf '1) List Users\\n2) List Groups\\n3) Change Password\\n4) Create User\\n5) Delete User\\n6) Create Group\\n0) Back\\nChoose [0-6]: '
+    printf '\n=== Manage Ubuntu ===\n'
+    printf '1) List Users\n2) List Groups\n3) Change Password\n4) Create User\n5) Delete User\n6) Create Group\n0) Back\nChoose [0-6]: '
     IFS= read -r choice || return
     case "$choice" in
       1) list_users_menu ;;
@@ -172,8 +176,8 @@ main() {
   check_environment
   local choice
   while true; do
-    printf '\\n=== Ubuntu24 DevOps Main Menu ===\\n1) Manage Ubuntu\\n0) Exit\\nChoose [0-1]: '
-    IFS= read -r choice || { printf '\\n'; break; }
+    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n0) Exit\nChoose [0-1]: '
+    IFS= read -r choice || { printf '\n'; break; }
     case "$choice" in
       1) manage_ubuntu ;;
       0) break ;;
