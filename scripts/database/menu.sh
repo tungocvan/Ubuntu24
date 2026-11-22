@@ -15,9 +15,17 @@ db_tables() {
   if ! db_query 'SHOW DATABASES;' | tail -n +2 | grep -Fxq -- "$database"; then
     printf '[ERROR] Database not found or not accessible.\n'; return 1
   fi
-  db_query "SHOW TABLES FROM \`$database\`;"
+  local output
+  output=$(db_query "SHOW TABLES FROM \`$database\`;") || return 1
+  if [[ -z "$output" ]]; then
+    printf '[INFO] Database is empty (0 tables): %s\n' "$database"
+  else
+    printf '%s\n' "$output"
+  fi
 }
-db_sizes() { db_query "SELECT table_schema AS database_name, ROUND(SUM(data_length+index_length)/1024/1024,2) AS size_mb FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(data_length+index_length) DESC;"; }
+db_sizes() {
+  db_query "SELECT s.SCHEMA_NAME AS database_name, COUNT(t.TABLE_NAME) AS table_count, COALESCE(ROUND(SUM(COALESCE(t.DATA_LENGTH,0)+COALESCE(t.INDEX_LENGTH,0))/1024/1024,2),0) AS size_mb FROM information_schema.SCHEMATA AS s LEFT JOIN information_schema.TABLES AS t ON s.SCHEMA_NAME=t.TABLE_SCHEMA GROUP BY s.SCHEMA_NAME ORDER BY size_mb DESC, s.SCHEMA_NAME;"
+}
 db_connections() { db_query 'SHOW PROCESSLIST;'; }
 main() {
   [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
