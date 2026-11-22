@@ -23,8 +23,8 @@ enable_proxy() {
   command -v ss >/dev/null || die 'ss missing.'
   ip -4 addr show dev "$WG_IF" 2>/dev/null | grep -Fq "$VPN_IP/" || die 'WireGuard interface/IP not active.'
   # Require MariaDB bound specifically to localhost, not wildcard or VPN IP.
-  ss -H -lnt '( sport = :3306 )' | grep -Eq '127\\.0\\.0\\.1:3306[[:space:]]' || die 'No 127.0.0.1:3306 listener; inspect ss -lntp.'
-  if ss -H -lnt '( sport = :3306 )' | grep -Eq '(0\\.0\\.0\\.0|10\\.77\\.0\\.1|\\[::\\]|\\*):3306'; then
+  ss -H -lnt '( sport = :3306 )' | grep -Eq '127\.0\.0\.1:3306[[:space:]]' || die 'No 127.0.0.1:3306 listener; inspect ss -lntp.'
+  if ss -H -lnt '( sport = :3306 )' | grep -Eq '(0\.0\.0\.0|10\.77\.0\.1|\[::\]|\*):3306'; then
     die '3306 already exposed on wildcard/VPN interface; refusing proxy.'
   fi
   printf '[WARNING] Install socat and enable TCP %s:3306 -> 127.0.0.1:3306.\n' "$VPN_IP"
