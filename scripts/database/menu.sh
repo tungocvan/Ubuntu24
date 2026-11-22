@@ -411,7 +411,6 @@ main() {
       13) db_action db_show_user_grants || true; db_pause ;;
       14) db_action db_revoke_privileges || true; db_pause ;;
       15) db_configure_connection || true; db_pause ;;
-      15) db_configure_connection || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
