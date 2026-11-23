@@ -103,6 +103,47 @@ db_delete_user() {
     return 1
   fi
 }
+db_test_user_connection() (
+  local username='' password='' hostname='127.0.0.1' port='3306' input='' temp='' escaped='' result=''
+  trap '[[ -z "$temp" ]] || rm -f -- "$temp"' EXIT
+  printf 'Database username: '
+  IFS= read -r username || exit 0
+  [[ "$username" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]] || { printf '[ERROR] Invalid username.\n'; exit 1; }
+  printf 'Password (hidden): '
+  IFS= read -r -s password || exit 0
+  printf '\nHostname [127.0.0.1]: '
+  IFS= read -r input || exit 0
+  hostname="${input:-127.0.0.1}"
+  printf 'Port [3306]: '
+  IFS= read -r input || exit 0
+  port="${input:-3306}"
+  if [[ ! "$hostname" =~ ^[A-Za-z0-9_.:-]+$ || ${#hostname} -gt 253 || ! "$port" =~ ^[0-9]+$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+    printf '[ERROR] Invalid hostname or port.\n'; exit 1
+  fi
+  temp=$(mktemp) || exit 1
+  chmod 600 "$temp"
+  escaped="${password//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$username" "$escaped" "$hostname" "$port" > "$temp"
+  unset password escaped
+  printf '[INFO] Testing TCP connection to %s:%s...\n' "$hostname" "$port"
+  if result=$("$DB_CLIENT" --defaults-file="$temp" --connect-timeout=5 --batch --skip-column-names --execute='SELECT CURRENT_USER(), VERSION();' 2>/dev/null); then
+    printf '[SUCCESS] Connection successful.\n'
+    printf '[INFO] Authenticated account and server version: %s\n' "$result"
+  else
+    printf '[ERROR] Connection failed. Check credentials, host permissions, TCP port, and firewall.\n'
+    exit 1
+  fi
+)
+db_offer_test_connection() {
+  local answer
+  printf 'Test a database user connection now? [Y/n]: '
+  IFS= read -r answer || return 0
+  case "$answer" in
+    ''|Y|y|YES|yes) db_test_user_connection || true ;;
+    *) printf '[INFO] Connection test skipped.\n' ;;
+  esac
+}
 db_create_user() {
   local name host password password_again answer sql_password
   printf 'New database username: '
@@ -149,6 +190,7 @@ db_create_user() {
   unset password
   if printf "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '%s'@'%s' IDENTIFIED BY '%s';\n" "$name" "$host" "$sql_password" | db_exec_stdin; then
     printf '[SUCCESS] Created %s@%s (no grants).\n' "$name" "$host"
+    db_offer_test_connection
   else
     printf '[ERROR] Create user failed; check CREATE USER privilege or duplicate account.\n'
     return 1
@@ -520,6 +562,7 @@ db_grant_create_drop() {
   fi
   printf '[SUCCESS] CREATE/DROP granted for %s@%s on %s.\n' "$name" "$host" "$scope_sql"
   printf '[INFO] Use SHOW GRANTS FOR the target account to verify effective grants.\n'
+  db_offer_test_connection
 }
 db_offer_super_admin_connection() {
   local name="$1" password="$2" answer key value hostname='' port='' candidate opts backup='' oldmask escaped
@@ -688,7 +731,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n18) Create Database Super Admin User\n0) Back\nChoose [0-18]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n18) Create Database Super Admin User\n19) Test Database User Connection\n0) Back\nChoose [0-19]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
@@ -709,6 +752,7 @@ main() {
       16) db_action db_enable_remote_user || true; db_pause ;;
       17) db_action db_grant_create_drop || true; db_pause ;;
       18) db_action db_create_super_admin || true; db_pause ;;
+      19) db_action db_test_user_connection || true; db_pause ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
