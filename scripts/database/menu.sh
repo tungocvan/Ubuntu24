@@ -447,7 +447,7 @@ db_enable_remote_user() {
   printf '[INFO] Verify bind-address, UFW allowlist, network route, and TLS separately before testing remote access.\n'
 }
 db_grant_create_drop() {
-  local name host scope prefix answer confirm scope_sql
+  local name host scope prefix answer confirm scope_sql admin_mode=tcp current grants partial
   printf 'Existing database username: '
   IFS= read -r name || return 0
   printf 'Account host [localhost]: '
@@ -481,11 +481,40 @@ db_grant_create_drop() {
       printf '[ERROR] Invalid scope.\n'
       return 1 ;;
   esac
+  current=$(db_query 'SELECT CURRENT_USER();' | tail -n 1) || return 1
+  grants=$(db_query 'SHOW GRANTS FOR CURRENT_USER();') || return 1
+  if [[ "$scope" == 1 ]]; then
+    partial=$(db_query "SHOW VARIABLES LIKE 'partial_revokes';") || return 1
+    if [[ "$partial" == *$'\tON' ]]; then
+      printf '[ERROR] MySQL partial_revokes=ON disables database grant wildcard semantics; prefix scope cannot be safely applied.\n'
+      return 1
+    fi
+  fi
+  if ! printf '%s\n' "$grants" | grep -Fq 'WITH GRANT OPTION'; then
+    printf '[WARNING] Current account %s does not have GRANT OPTION.\n' "$current"
+    printf 'Type SOCKET to authorize local database root via sudo Unix socket: '
+    IFS= read -r answer || return 0
+    [[ "$answer" == SOCKET ]] || { printf '[INFO] Cancelled.\n'; return 0; }
+    if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+      printf '[ERROR] sudo unavailable; run sudo -v then retry.\n'; return 1
+    fi
+    if ! current=$(sudo -n "$DB_CLIENT" --no-defaults --protocol=socket --user=root --batch --skip-column-names --execute='SELECT CURRENT_USER();' 2>/dev/null); then
+      printf '[ERROR] Cannot authenticate local database root via socket.\n'; return 1
+    fi
+    [[ "$current" == root@localhost ]] || { printf '[ERROR] Socket authentication is not root@localhost.\n'; return 1; }
+    if [[ "$scope" == 1 ]]; then
+      partial=$(sudo -n "$DB_CLIENT" --no-defaults --protocol=socket --user=root --batch --skip-column-names --execute="SHOW VARIABLES LIKE 'partial_revokes';" 2>/dev/null) || return 1
+      if [[ "$partial" == *$'\tON' ]]; then
+        printf '[ERROR] Root connection has partial_revokes=ON; refusing wildcard prefix grant.\n'; return 1
+      fi
+    fi
+    admin_mode=socket
+  fi
   printf '[WARNING] GRANT CREATE, DROP ON %s TO %s@%s\n' "$scope_sql" "$name" "$host"
   printf 'Type GRANT to apply: '
   IFS= read -r answer || return 0
   [[ "$answer" == GRANT ]] || { printf '[INFO] Cancelled.\n'; return 0; }
-  if ! printf "GRANT CREATE, DROP ON %s TO '%s'@'%s';\n" "$scope_sql" "$name" "$host" | db_exec_stdin; then
+  if ! printf "GRANT CREATE, DROP ON %s TO '%s'@'%s';\n" "$scope_sql" "$name" "$host" | db_super_admin_exec "$admin_mode"; then
     printf '[ERROR] GRANT failed. Check privileges, server version, and database wildcard handling.\n'
     return 1
   fi
