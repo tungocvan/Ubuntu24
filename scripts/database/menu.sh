@@ -514,7 +514,7 @@ db_grant_create_drop() {
       ;;
     2)
       scope_sql='*.*'
-      printf '[WARNING] GLOBAL CREATE/DROP allows creating and dropping databases across the server, including unrelated application databases.\n'
+      printf '[WARNING] GLOBAL ALL PRIVILEGES allows reading, modifying and dropping data across the server, including unrelated application databases.\n'
       printf 'Type GLOBAL to acknowledge this risk: '
       IFS= read -r confirm || return 0
       [[ "$confirm" == GLOBAL ]] || { printf '[INFO] Cancelled.\n'; return 0; }
@@ -552,15 +552,15 @@ db_grant_create_drop() {
     fi
     admin_mode=socket
   fi
-  printf '[WARNING] GRANT CREATE, DROP ON %s TO %s@%s\n' "$scope_sql" "$name" "$host"
+  printf '[WARNING] GRANT ALL PRIVILEGES ON %s TO %s@%s\n' "$scope_sql" "$name" "$host"
   printf 'Type GRANT to apply: '
   IFS= read -r answer || return 0
   [[ "$answer" == GRANT ]] || { printf '[INFO] Cancelled.\n'; return 0; }
-  if ! printf "GRANT CREATE, DROP ON %s TO '%s'@'%s';\n" "$scope_sql" "$name" "$host" | db_super_admin_exec "$admin_mode"; then
+  if ! printf "GRANT ALL PRIVILEGES ON %s TO '%s'@'%s';\n" "$scope_sql" "$name" "$host" | db_super_admin_exec "$admin_mode"; then
     printf '[ERROR] GRANT failed. Check privileges, server version, and database wildcard handling.\n'
     return 1
   fi
-  printf '[SUCCESS] CREATE/DROP granted for %s@%s on %s.\n' "$name" "$host" "$scope_sql"
+  printf '[SUCCESS] ALL PRIVILEGES granted for %s@%s on %s.\n' "$name" "$host" "$scope_sql"
   printf '[INFO] Use SHOW GRANTS FOR the target account to verify effective grants.\n'
   db_offer_test_connection
 }
@@ -731,7 +731,7 @@ main() {
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database CREATE/DROP Privileges\n18) Create Database Super Admin User\n19) Test Database User Connection\n0) Back\nChoose [0-19]: '
+    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database ALL Privileges\n18) Create Database Super Admin User\n19) Test Database User Connection\n0) Back\nChoose [0-19]: '
     IFS= read -r choice || break
     case "$choice" in
       1) db_connect || true; db_pause ;;
