@@ -13,7 +13,7 @@ trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
 usage() {
   cat <<'HELP'
 Usage: sudo bash scripts/menu.sh [--help]
-Manage Ubuntu users/groups, native databases and WireGuard VPN.
+Manage Ubuntu users/groups, native databases, WireGuard VPN and GitHub repositories.
 HELP
 }
 check_environment() {
@@ -198,6 +198,22 @@ manage_vpn() {
     esac
   done
 }
+manage_github() {
+  local script_dir entry
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  entry="$script_dir/../repo-duplica.sh"
+  [[ -r "$entry" ]] || { log ERROR "Missing: $entry"; pause; return 0; }
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != root ]]; then
+    if ! sudo -H -u "$SUDO_USER" -- bash "$entry"; then
+      log ERROR 'GitHub repository menu failed'; pause
+    fi
+  else
+    log WARNING 'Running GitHub menu as root; using root GitHub authentication.'
+    if ! bash "$entry"; then
+      log ERROR 'GitHub repository menu failed'; pause
+    fi
+  fi
+}
 main() {
   if (($#)); then
     if (($# == 1)) && [[ "$1" == --help || "$1" == -h ]]; then usage; return; fi
@@ -206,12 +222,13 @@ main() {
   check_environment
   local choice
   while true; do
-    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n3) Manage WireGuard VPN\n0) Exit\nChoose [0-3]: '
+    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n3) Manage WireGuard VPN\n4) Manage GitHub Repository\n0) Exit\nChoose [0-4]: '
     IFS= read -r choice || { printf '\n'; break; }
     case "$choice" in
       1) manage_ubuntu ;;
       2) manage_database ;;
       3) manage_vpn ;;
+      4) manage_github ;;
       0) break ;;
       *) log WARNING 'Invalid selection' ;;
     esac
