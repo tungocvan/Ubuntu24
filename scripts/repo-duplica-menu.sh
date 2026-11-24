@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-say() { printf '\n[repo-duplica V3] %s\n' "$*"; }
+say() { printf '\n[repo-duplica V4] %s\n' "$*"; }
 pause_menu() { printf '\nPress Enter to return to menu... '; IFS= read -r _ || true; }
 valid_repo() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]; }
 valid_owner() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]; }
@@ -58,7 +58,7 @@ duplicate_repo() {
   src_owner="${src%%/*}"; dst_owner="${dst%%/*}"
   src_name="${src#*/}"; dst_name="${dst#*/}"
   if [[ "$src_owner" != "$dst_owner" ]]; then
-    say 'V3 duplication currently supports source and destination in the same authenticated account only.'
+    say 'V4 duplication currently supports source and destination in the same authenticated account only.'
     return 0
   fi
   if [[ "$src_owner" != "$(current_owner)" ]]; then
@@ -115,22 +115,68 @@ delete_repo() {
 }
 configure_account() {
   command -v gh >/dev/null 2>&1 || { say 'Install GitHub CLI (gh) first.'; return 0; }
-  printf '\n1) View accounts\n2) Login (interactive)\n3) Switch account\n4) View git protocol\n0) Back\nSelect: '
-  local option
-  IFS= read -r option || return 0
-  case "$option" in
-    1) gh auth status || true ;;
-    2) gh auth login --hostname github.com ;;
-    3) gh auth switch --hostname github.com ;;
-    4) gh config get git_protocol --host github.com ;;
-    0) ;;
-    *) say 'Invalid option.' ;;
-  esac
+  local option account target answer
+  while true; do
+    printf '\n=== Configure GitHub Account V4 ===\n1) List GitHub Accounts\n2) Add GitHub Account (Login)\n3) Switch Active Account\n4) View Git Protocol\n5) Grant Full Repository Token Scopes\n6) Check Token Permissions\n7) Logout GitHub Account\n0) Back\nChoose [0-7]: '
+    IFS= read -r option || return 0
+    case "$option" in
+      1) gh auth status --hostname github.com || true ;;
+      2) gh auth login --hostname github.com --git-protocol https --web || say 'Login failed or cancelled.' ;;
+      3) gh auth switch --hostname github.com || say 'Account switch failed or cancelled.' ;;
+      4) gh config get git_protocol --host github.com || true ;;
+      5)
+        if require_auth; then
+          account=$(current_owner) || continue
+          say "Active account: $account"
+          say 'WARNING: repo, workflow and delete_repo scopes allow broad repository access, including deletion where account permissions permit.'
+          printf 'Type GRANT to request these scopes: '
+          IFS= read -r answer || return 0
+          if [[ "$answer" == GRANT ]]; then
+            gh auth refresh --hostname github.com --scopes repo,workflow,delete_repo && gh auth status --hostname github.com || say 'Scope refresh or verification failed.'
+          else
+            say 'Cancelled.'
+          fi
+        fi ;;
+      6)
+        if require_auth; then
+          gh auth status --hostname github.com || true
+          printf 'Repository to inspect (name or owner/name; blank to skip): '
+          IFS= read -r target || return 0
+          if [[ -n "$target" ]]; then
+            if target=$(normalize_repo "$(clean_repo_input "$target")"); then
+              gh api "repos/$target" --jq '{full_name, permissions}' || say 'Cannot inspect repository permissions.'
+            else
+              say 'Invalid repository name.'
+            fi
+          fi
+          say 'Token scopes and repository permissions are separate; organization policies may further restrict operations.'
+        fi ;;
+      7)
+        gh auth status --hostname github.com || true
+        printf 'GitHub username to log out: '
+        IFS= read -r account || return 0
+        if valid_owner "$account"; then
+          printf 'Type LOGOUT to remove local authentication for %s: ' "$account"
+          IFS= read -r answer || return 0
+          if [[ "$answer" == LOGOUT ]]; then
+            gh auth logout --hostname github.com --user "$account" || say 'Logout failed.'
+          else
+            say 'Cancelled.'
+          fi
+        else
+          say 'Invalid account name.'
+        fi ;;
+      0) return 0 ;;
+      *) say 'Invalid option.' ;;
+    esac
+    pause_menu
+  done
 }
+
 main() {
   while true; do
-    printf '\n========== REPO DUPLICA V3 ==========\n'
-    printf '1) Check GitHub connection\n2) Duplicate repository\n3) DELETE GitHub repository\n4) Configure GitHub account\n0) Exit\nSelect: '
+    printf '\n========== REPO DUPLICA V4 ==========\n'
+    printf '1) Check GitHub connection\n2) Duplicate repository\n3) DELETE GitHub repository\n4) Configure GitHub account\n0) Back\nSelect: '
     local choice
     IFS= read -r choice || return 0
     case "$choice" in
