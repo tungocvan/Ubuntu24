@@ -36,4 +36,3 @@ if [ -f "$PATCH_FILE" ]; then
     echo "📂 Backup thay đổi local lưu tại: $PATCH_FILE"
     echo "👉 Nếu muốn áp lại, dùng: git apply $PATCH_FILE"
 fi
-cp resources/js/echo-host.js resources/js/echo.js
