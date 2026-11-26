@@ -781,7 +781,7 @@ db_create_database() {
   printf 'Create %s with utf8mb4 / utf8mb4_unicode_ci? Type CREATE: ' "$name"
   IFS= read -r answer || return 0
   [[ "$answer" == CREATE ]] || return 0
-  db_query "CREATE DATABASE `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || return 1
+  db_query "CREATE DATABASE \`$name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || return 1
   printf '[SUCCESS] Database %s created.\n' "$name"
 }
 db_delete_database() {
@@ -793,7 +793,7 @@ db_delete_database() {
   [[ "$answer" == "$name" ]] || return 0
   printf 'Type DROP to confirm: '; IFS= read -r answer || return 0
   [[ "$answer" == DROP ]] || return 0
-  db_query "DROP DATABASE `$name`;" || return 1
+  db_query "DROP DATABASE \`$name\`;" || return 1
   printf '[SUCCESS] Database %s deleted.\n' "$name"
 }
 db_group_1() {
