@@ -1,0 +1,23 @@
+server {    	
+    listen 80;
+    listen 443 ssl;
+    client_max_body_size 512M;
+    client_body_timeout 900s;
+    server_name domain.laravel.tk;
+    ssl_certificate /etc/.cert/laravel.tk-cert.pem;
+    ssl_certificate_key /etc/.cert/laravel.tk-key.pem;
+    root /var/www/domain/public;
+    index index.php index.html index.htm;	
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
