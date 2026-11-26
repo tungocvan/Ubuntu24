@@ -34,9 +34,27 @@ login_identity(){
  if [[ -n ${SSH_TTY:-} && $SSH_TTY == "$terminal" ]]; then LOGIN_TYPE=SSH; fi
  return 0
 }
-login_user(){ login_identity; printf '%s\n' "$LOGIN_NAME"; }
+runtime_environment(){
+ if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+  printf 'WSL'
+ else
+  printf 'Linux'
+ fi
+}
+login_user(){
+ login_identity
+ if [[ $LOGIN_NAME == unknown && $(runtime_environment) == WSL && ${LOGNAME:-} == "$(id -un)" ]]; then
+  printf '%s (WSL account; session unverified)\n' "$LOGNAME"
+ else
+  printf '%s\n' "$LOGIN_NAME"
+ fi
+}
 show_current_user(){
  login_identity
+ printf 'Environment: %s\nCurrent Account: %s\n' "$(runtime_environment)" "$(id -un)"
+ if [[ $LOGIN_NAME == unknown && $(runtime_environment) == WSL && ${LOGNAME:-} == "$(id -un)" ]]; then
+  LOGIN_NAME="$LOGNAME (unverified)" LOGIN_SOURCE='LOGNAME (WSL fallback)' LOGIN_TYPE='WSL shell'
+ fi
  printf 'Login User: %s\nLogin Source: %s\nEffective User: %s\nSudo User: %s\nHostname: %s\nSession ID: %s\nSession Type: %s\nTerminal: %s\n' "$LOGIN_NAME" "$LOGIN_SOURCE" "$(id -un)" "${SUDO_USER:-none}" "$(hostname)" "$LOGIN_SESSION" "$LOGIN_TYPE" "$LOGIN_TERMINAL"
  id
 }
