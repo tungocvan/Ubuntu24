@@ -13,7 +13,7 @@ trap 'log ERROR "Command failed at line $LINENO" >&2' ERR
 usage() {
   cat <<'HELP'
 Usage: sudo bash scripts/menu.sh [--help]
-Manage Ubuntu users/groups, native databases, WireGuard VPN and GitHub repositories.
+Manage Ubuntu users/groups, native databases, WireGuard VPN, GitHub repositories and SSL certificates.
 HELP
 }
 check_environment() {
@@ -214,6 +214,13 @@ manage_github() {
     fi
   fi
 }
+manage_ssl() {
+  local script_dir
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  if ! bash "$script_dir/www/menu.sh"; then
+    log ERROR 'SSL menu failed'; pause
+  fi
+}
 main() {
   if (($#)); then
     if (($# == 1)) && [[ "$1" == --help || "$1" == -h ]]; then usage; return; fi
@@ -222,13 +229,14 @@ main() {
   check_environment
   local choice
   while true; do
-    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n3) Manage WireGuard VPN\n4) Manage GitHub Repository\n0) Exit\nChoose [0-4]: '
+    printf '\n=== Ubuntu24 DevOps Main Menu ===\n1) Manage Ubuntu\n2) Manage Database\n3) Manage WireGuard VPN\n4) Manage GitHub Repository\n5) Manage SSL Certificates\n0) Exit\nChoose [0-5]: '
     IFS= read -r choice || { printf '\n'; break; }
     case "$choice" in
       1) manage_ubuntu ;;
       2) manage_database ;;
       3) manage_vpn ;;
       4) manage_github ;;
+      5) manage_ssl ;;
       0) break ;;
       *) log WARNING 'Invalid selection' ;;
     esac
