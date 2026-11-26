@@ -430,6 +430,7 @@ db_configure_connection() {
   if ! mv -- "$candidate" "$DB_CONFIG"; then
     rm -f -- "$candidate"; printf '[ERROR] Unable to save db.inc.\n'; return 1
   fi
+  db_session_clear
   DB_CONNECTED=0
   printf '[SUCCESS] db.inc updated. Reconnecting...\n'
   db_connect
@@ -713,7 +714,7 @@ db_disconnect() {
 }
 db_action() {
   if (( DB_CONNECTED != 1 )); then
-    printf '[WARNING] Please select 1) Connect Database first.\n'
+    printf '[WARNING] Please connect through Manage Connection first.\n'
     return 0
   fi
   if ! db_run "$@"; then
@@ -721,41 +722,184 @@ db_action() {
     return 1
   fi
 }
+# Session credentials are kept in shell memory, never exported.
+DB_SESSION=0
+DB_SESSION_USER=''
+DB_SESSION_PASSWORD=''
+DB_SESSION_HOST=''
+DB_SESSION_PORT=''
+db_session_clear() {
+  DB_SESSION=0
+  DB_SESSION_USER='' DB_SESSION_PASSWORD='' DB_SESSION_HOST='' DB_SESSION_PORT=''
+}
+# Override the runner, preserving existing db.inc validation for normal connections.
+db_run() (
+  DB_TEMP=''
+  trap db_cleanup EXIT
+  if (( DB_SESSION )); then
+    local escaped
+    if command -v mariadb >/dev/null 2>&1; then DB_CLIENT=mariadb
+    elif command -v mysql >/dev/null 2>&1; then DB_CLIENT=mysql
+    else return 1; fi
+    DB_TEMP=$(mktemp) || return 1
+    chmod 600 "$DB_TEMP" || return 1
+    escaped="${DB_SESSION_PASSWORD//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\nport=%s\nprotocol=tcp\n' "$DB_SESSION_USER" "$escaped" "$DB_SESSION_HOST" "$DB_SESSION_PORT" > "$DB_TEMP" || return 1
+  else
+    db_init || return 1
+  fi
+  "$@"
+)
+db_switch_user() {
+  local username password host port result
+  printf 'New username: '; IFS= read -r username || return 0
+  printf 'Password (hidden): '; IFS= read -r -s password || return 0; printf '\n'
+  printf 'Hostname [127.0.0.1]: '; IFS= read -r host || return 0
+  printf 'Port [3306]: '; IFS= read -r port || return 0
+  host="${host:-127.0.0.1}"; port="${port:-3306}"
+  [[ "$username" =~ ^[A-Za-z0-9_.-]{1,32}$ && "$host" =~ ^[A-Za-z0-9_.:-]+$ && "$port" =~ ^[0-9]{1,5}$ && "$password" != *$'\r'* ]] || { printf '[ERROR] Invalid connection settings.\n'; return 1; }
+  (( 10#$port >= 1 && 10#$port <= 65535 )) || return 1
+  if ! result=$(DB_SESSION=1 DB_SESSION_USER="$username" DB_SESSION_PASSWORD="$password" DB_SESSION_HOST="$host" DB_SESSION_PORT="$port" db_run db_query 'SELECT CURRENT_USER(), VERSION();'); then
+    printf '[ERROR] Connection failed; previous session unchanged.\n'; return 1
+  fi
+  DB_SESSION=1 DB_SESSION_USER="$username" DB_SESSION_PASSWORD="$password" DB_SESSION_HOST="$host" DB_SESSION_PORT="$port"
+  DB_CONNECTED=1
+  DB_VERSION=$(printf '%s\n' "$result" | tail -n 1 | cut -f2)
+  if [[ "$DB_VERSION" == *MariaDB* ]]; then DB_ENGINE=MariaDB; else DB_ENGINE=MySQL; fi
+  printf '[SUCCESS] Switched to %s. db.inc unchanged.\n' "$(printf '%s\n' "$result" | tail -n 1 | cut -f1)"
+  printf '[INFO] To persist credentials, use Configure Database Connection.\n'
+}
+db_database_name() {
+  [[ "$1" =~ ^[A-Za-z0-9_]{1,64}$ ]] || return 1
+  case "${1,,}" in mysql|sys|information_schema|performance_schema|admin_tools) return 1;; esac
+}
+db_create_database() {
+  local name answer
+  printf 'Database name: '; IFS= read -r name || return 0
+  db_database_name "$name" || { printf '[ERROR] Invalid or protected database name.\n'; return 1; }
+  printf 'Create %s with utf8mb4 / utf8mb4_unicode_ci? Type CREATE: ' "$name"
+  IFS= read -r answer || return 0
+  [[ "$answer" == CREATE ]] || return 0
+  db_query "CREATE DATABASE `$name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || return 1
+  printf '[SUCCESS] Database %s created.\n' "$name"
+}
+db_delete_database() {
+  local name answer
+  printf 'Database name: '; IFS= read -r name || return 0
+  db_database_name "$name" || { printf '[ERROR] Invalid or protected database name.\n'; return 1; }
+  printf '[WARNING] All tables and data in %s will be permanently deleted. Verify backup first.\n' "$name"
+  printf 'Re-enter database name: '; IFS= read -r answer || return 0
+  [[ "$answer" == "$name" ]] || return 0
+  printf 'Type DROP to confirm: '; IFS= read -r answer || return 0
+  [[ "$answer" == DROP ]] || return 0
+  db_query "DROP DATABASE `$name`;" || return 1
+  printf '[SUCCESS] Database %s deleted.\n' "$name"
+}
+db_group_1() {
+  local choice
+  while true; do
+    printf '\n=== Manage Connection ===\n1) Connect Database\n2) Disconnect Database\n3) Switch Database User\n4) Test Database User Connection\n5) Configure Database Connection\n0) Back\nChoose [0-5]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) db_session_clear; db_connect || true; db_pause ;;
+      2) db_disconnect; db_session_clear || true; db_pause ;;
+      3) db_switch_user || true; db_pause ;;
+      4) db_run db_test_user_connection || true; db_pause ;;
+      5) db_configure_connection || true; db_pause ;;
+      0) return 0 ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+
+db_group_2() {
+  local choice
+  while true; do
+    printf '\n=== Manage Databases ===\n1) List Databases\n2) Create Database\n3) Delete Database\n4) List Tables\n5) Database Sizes\n0) Back\nChoose [0-5]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) db_action db_list || true; db_pause ;;
+      2) db_action db_create_database || true; db_pause ;;
+      3) db_action db_delete_database || true; db_pause ;;
+      4) db_action db_tables || true; db_pause ;;
+      5) db_action db_sizes || true; db_pause ;;
+      0) return 0 ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+
+db_group_3() {
+  local choice
+  while true; do
+    printf '\n=== Manage Users ===\n1) List Database Users\n2) Create Database User\n3) Delete Database User\n4) Create Database Super Admin User\n5) Enable Remote Access for User\n0) Back\nChoose [0-5]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) db_action db_list_users || true; db_pause ;;
+      2) db_action db_create_user || true; db_pause ;;
+      3) db_action db_delete_user || true; db_pause ;;
+      4) db_action db_create_super_admin || true; db_pause ;;
+      5) db_action db_enable_remote_user || true; db_pause ;;
+      0) return 0 ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+
+db_group_4() {
+  local choice
+  while true; do
+    printf '\n=== Manage Privileges ===\n1) Show My Database Grants\n2) Show Database User Privileges\n3) Grant Database Privileges\n4) Grant Database ALL Privileges\n5) Revoke Database Privileges\n0) Back\nChoose [0-5]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) db_action db_show_grants || true; db_pause ;;
+      2) db_action db_show_user_grants || true; db_pause ;;
+      3) db_action db_grant_privileges || true; db_pause ;;
+      4) db_action db_grant_create_drop || true; db_pause ;;
+      5) db_action db_revoke_privileges || true; db_pause ;;
+      0) return 0 ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
+
+db_group_5() {
+  local choice
+  while true; do
+    printf '\n=== Server Information ===\n1) Server Information\n2) Active Connections\n0) Back\nChoose [0-2]: '
+    IFS= read -r choice || return 0
+    case "$choice" in
+      1) db_action db_info || true; db_pause ;;
+      2) db_action db_connections || true; db_pause ;;
+      0) return 0 ;;
+      *) printf '[WARNING] Invalid selection.\n' ;;
+    esac
+  done
+}
 main() {
   [[ -t 0 && -t 1 ]] || { printf '[ERROR] Interactive terminal required.\n' >&2; exit 1; }
   local choice
   while true; do
-    printf '\n=== Manage Database (MariaDB/MySQL TCP) ===\n'
+    printf '\n=== Manage Database V2 ===\n'
     if (( DB_CONNECTED )); then
-      printf 'Connection: CONNECTED (%s %s; verified at login)\n' "$DB_ENGINE" "$DB_VERSION"
+      printf 'Connection: CONNECTED (%s %s)\n' "$DB_ENGINE" "$DB_VERSION"
+      db_run db_query 'SELECT CURRENT_USER() AS authenticated_user;' || printf '[WARNING] Connection check failed.\n'
     else
       printf 'Connection: DISCONNECTED\n'
     fi
-    printf '1) Connect Database\n2) Disconnect Database\n3) Server Information\n4) List Databases\n5) List Tables\n6) Database Sizes\n7) Active Connections\n8) Create Database User\n9) List Database Users\n10) Delete Database User\n11) Show My Database Grants\n12) Grant Database Privileges\n13) Show Database User Privileges\n14) Revoke Database Privileges\n15) Configure Database Connection\n16) Enable Remote Access for User\n17) Grant Database ALL Privileges\n18) Create Database Super Admin User\n19) Test Database User Connection\n0) Back\nChoose [0-19]: '
+    printf '1) Manage Connection\n2) Manage Databases\n3) Manage Users\n4) Manage Privileges\n5) Server Information\n0) Back\nChoose [0-5]: '
     IFS= read -r choice || break
     case "$choice" in
-      1) db_connect || true; db_pause ;;
-      2) db_disconnect; db_pause ;;
-      3) db_action db_info || true; db_pause ;;
-      4) db_action db_list || true; db_pause ;;
-      5) db_action db_tables || true; db_pause ;;
-      6) db_action db_sizes || true; db_pause ;;
-      7) db_action db_connections || true; db_pause ;;
-      8) db_action db_create_user || true; db_pause ;;
-      9) db_action db_list_users || true; db_pause ;;
-      10) db_action db_delete_user || true; db_pause ;;
-      11) db_action db_show_grants || true; db_pause ;;
-      12) db_action db_grant_privileges || true; db_pause ;;
-      13) db_action db_show_user_grants || true; db_pause ;;
-      14) db_action db_revoke_privileges || true; db_pause ;;
-      15) db_configure_connection || true; db_pause ;;
-      16) db_action db_enable_remote_user || true; db_pause ;;
-      17) db_action db_grant_create_drop || true; db_pause ;;
-      18) db_action db_create_super_admin || true; db_pause ;;
-      19) db_action db_test_user_connection || true; db_pause ;;
+      1) db_group_1 ;;
+      2) db_group_2 ;;
+      3) db_group_3 ;;
+      4) db_group_4 ;;
+      5) db_group_5 ;;
       0) break ;;
       *) printf '[WARNING] Invalid selection.\n' ;;
     esac
   done
+  db_session_clear
 }
 main "$@"
